@@ -1,40 +1,53 @@
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from app.repository.mock_users import MOCK_USERS
 from app.auth.jwt_handler import JWTHandler
 from app.models.user import User
+from app.repository.user_repository import UserRepository
+
 
 class AuthService:
-    """Service handling business logic for authentication."""
+    """Service responsible for authentication business logic."""
 
     @staticmethod
-    def login(employee_id: str, password: str, department: str) -> Optional[Dict[str, Any]]:
+    def login(
+        employee_id: str,
+        password: str,
+        department: str,
+    ) -> Optional[dict]:
         """
-        Verify credentials and generate a JWT if valid.
-        Currently uses MOCK_USERS.
+        Authenticate a user and generate an access token.
         """
-        # Find the user in the mock database
-        user_data = next(
-            (u for u in MOCK_USERS if u["employee_id"] == employee_id), 
-            None
-        )
 
-        if not user_data:
+        # Retrieve user from repository
+        user_data = UserRepository.get_by_employee_id(employee_id)
+
+        if user_data is None:
             return None
 
-        # Verify password and department
-        # Note: In a real app, passwords should be verified using a hasher like bcrypt
-        if user_data["password"] != password or user_data["department"] != department:
+        # Validate password
+        if not PasswordManager.verify_password(
+            password,
+            user_data["password"],
+        ):
             return None
 
-        # Create the user model instance
+        # Validate department
+        if user_data["department"] != department:
+            return None
+
+        # Convert dictionary to User model
         user = User(**user_data)
 
-        # Generate the JWT token
-        token_data = {"sub": user.employee_id, "role": user.role.value}
-        access_token = JWTHandler.create_access_token(data=token_data)
+        # Create JWT payload
+        token_data = {
+            "sub": user.employee_id,
+            "role": user.role.value,
+        }
+
+        # Generate access token
+        access_token = JWTHandler.create_access_token(token_data)
 
         return {
             "access_token": access_token,
-            "user": user
+            "user": user,
         }

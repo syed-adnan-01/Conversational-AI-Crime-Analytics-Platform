@@ -1,6 +1,6 @@
 from app.core.roles import UserRole
 
-MOCK_USERS = [
+SEED_USERS = [
     {
         "user_id": "USR001",
         "employee_id": "EMP001",
