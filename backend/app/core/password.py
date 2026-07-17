@@ -1,10 +1,4 @@
-from passlib.context import CryptContext
-
-# Configure bcrypt hashing
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-)
+import bcrypt
 
 
 class PasswordManager:
@@ -17,7 +11,10 @@ class PasswordManager:
         """
         Hash a plain text password.
         """
-        return pwd_context.hash(password)
+        return bcrypt.hashpw(
+            password.encode("utf-8"),
+            bcrypt.gensalt(),
+        ).decode("utf-8")
 
     @staticmethod
     def verify_password(
@@ -27,7 +24,7 @@ class PasswordManager:
         """
         Verify a plain text password against a hash.
         """
-        return pwd_context.verify(
-            plain_password,
-            hashed_password,
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
         )

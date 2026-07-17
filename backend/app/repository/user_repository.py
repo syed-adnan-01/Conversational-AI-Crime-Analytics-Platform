@@ -29,11 +29,16 @@ class UserRepository:
             return
 
         for user in SEED_USERS:
+            print("Before hashing:", repr(user["password"]))
+            print("Length:", len(user["password"]))
+
             user_copy = deepcopy(user)
 
             user_copy["password"] = PasswordManager.hash_password(
                 user["password"]
             )
+
+            print("After hashing:", user_copy["password"])
 
             cls._users.append(user_copy)
 

@@ -1,6 +1,7 @@
 from typing import Optional
 
 from app.auth.jwt_handler import JWTHandler
+from app.core.password import PasswordManager
 from app.models.user import User
 from app.repository.user_repository import UserRepository
 
@@ -24,21 +25,21 @@ class AuthService:
         if user_data is None:
             return None
 
-        # Validate password
+        # Verify password using bcrypt
         if not PasswordManager.verify_password(
             password,
             user_data["password"],
         ):
             return None
 
-        # Validate department
+        # Verify department
         if user_data["department"] != department:
             return None
 
         # Convert dictionary to User model
         user = User(**user_data)
 
-        # Create JWT payload
+        # JWT payload
         token_data = {
             "sub": user.employee_id,
             "role": user.role.value,
