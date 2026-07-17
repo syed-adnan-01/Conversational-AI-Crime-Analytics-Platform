@@ -2,46 +2,66 @@ from fastapi import FastAPI
 
 from app.core.config import settings
 from app.core.logging import app_logger
+
+from app.core.exceptions import (
+    CrimeSphereException,
+    crimesphere_exception_handler,
+    global_exception_handler,
+)
+
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.request_logger import RequestLoggingMiddleware
 
-# Create FastAPI application
+from app.api.api import api_router
+
+
+# --------------------------------------------------
+# Create FastAPI Application
+# --------------------------------------------------
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    debug=settings.DEBUG
+    debug=settings.DEBUG,
 )
 
-# Register middleware
-app.add_middleware(RequestIDMiddleware)
+
+# --------------------------------------------------
+# Register Middlewares
+# --------------------------------------------------
+
+# FastAPI executes middleware in reverse order.
+# RequestIDMiddleware must execute before RequestLoggingMiddleware,
+# so RequestLoggingMiddleware is registered first.
+
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RequestIDMiddleware)
 
 
-# Log startup
+# --------------------------------------------------
+# Register Exception Handlers
+# --------------------------------------------------
+
+app.add_exception_handler(
+    CrimeSphereException,
+    crimesphere_exception_handler,
+)
+
+app.add_exception_handler(
+    Exception,
+    global_exception_handler,
+)
+
+
+# --------------------------------------------------
+# Register API Routers
+# --------------------------------------------------
+
+app.include_router(api_router)
+
+
+# --------------------------------------------------
+# Startup Log
+# --------------------------------------------------
+
 app_logger.info("CrimeSphere AI Backend Started")
-
-
-@app.get("/")
-def home():
-    app_logger.info("Home endpoint accessed")
-    return {
-        "message": "Welcome to CrimeSphere AI Backend"
-    }
-
-
-@app.get("/config")
-def config():
-    app_logger.info("Config endpoint accessed")
-    return {
-        "project": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT,
-        "debug": settings.DEBUG
-    }
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy"
-    }
