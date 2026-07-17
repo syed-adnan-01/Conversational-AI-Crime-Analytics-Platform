@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { FileText } from "lucide-react";
+import ReportsInterface from "@/components/reports/ReportsInterface";
 
-export const metadata: Metadata = { title: "Reports" };
+export const metadata: Metadata = {
+  title: "Reports",
+};
 
-export default function Page() {
-  return (
-    <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-        style={{ background: "rgba(0,112,243,0.1)", border: "1px solid rgba(0,112,243,0.2)" }}>
-        <FileText className="w-8 h-8 text-blue-400" />
-      </div>
-      <h2 className="text-xl font-bold text-white mb-2">Reports</h2>
-      <p style={{ color: "#526080" }} className="text-sm">Coming next — generate and download official reports.</p>
-    </div>
-  );
+export default function ReportsPage() {
+  return <ReportsInterface />;
 }

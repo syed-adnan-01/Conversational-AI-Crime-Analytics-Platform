@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { Network } from "lucide-react";
+import NetworkGraph from "@/components/criminal-network/NetworkGraph";
 
-export const metadata: Metadata = { title: "Criminal Network" };
+export const metadata: Metadata = {
+  title: "Criminal Network",
+};
 
-export default function Page() {
-  return (
-    <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-        style={{ background: "rgba(0,112,243,0.1)", border: "1px solid rgba(0,112,243,0.2)" }}>
-        <Network className="w-8 h-8 text-blue-400" />
-      </div>
-      <h2 className="text-xl font-bold text-white mb-2">Criminal Network</h2>
-      <p style={{ color: "#526080" }} className="text-sm">Coming next — interactive criminal relationship graph.</p>
-    </div>
-  );
+export default function CriminalNetworkPage() {
+  return <NetworkGraph />;
 }
