@@ -49,3 +49,7 @@ error_logger = create_logger("error", "error.log")
 auth_logger = create_logger("auth", "auth.log")
 
 ai_logger = create_logger("ai", "ai.log")
+
+case_logger = create_logger("case", "case.log")
+
+complainant_logger = create_logger("complainant", "complainant.log")

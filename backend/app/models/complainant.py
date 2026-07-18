@@ -1,10 +1,10 @@
 """
 ============================================================
-Victim Domain Model
+Complainant Domain Model
 ============================================================
 
-Module  : Victim Management
-Entity  : Victim
+Module  : Complainant Management
+Entity  : Complainant
 Source   : Police FIR System ER Diagram (Primary Source of Truth)
 Author  : CrimeSphere AI Architecture Team
 """
@@ -14,20 +14,20 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from app.common.enums import Gender, IdentificationType
+from app.common.enums import Gender
 
 
-class Victim(BaseModel):
+class Complainant(BaseModel):
     """
-    Domain entity representing a Victim linked to a CaseMaster record.
+    Domain entity representing a Complainant linked to a CaseMaster record.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     # Primary Identifier (System-generated PK)
-    victim_id: Optional[str] = None
+    complainant_id: Optional[str] = None
 
-    # Foreign Key to CaseMaster (Required, never allow orphan victims)
+    # Foreign Key to CaseMaster (Required, never allow orphan complainants)
     case_master_id: str
 
     # Personal Information
@@ -40,9 +40,9 @@ class Victim(BaseModel):
     nationality: Optional[str] = None
     occupation: Optional[str] = None
 
-    # Identification
-    id_type: Optional[IdentificationType] = None
-    id_number: Optional[str] = None
+    # Relationship Details
+    relationship_type: Optional[str] = None  # e.g., Father, Mother, Victim, Relative
+    relative_name: Optional[str] = None      # e.g., Father's name, Husband's name
 
     # Audit Fields
     created_at: Optional[datetime] = None

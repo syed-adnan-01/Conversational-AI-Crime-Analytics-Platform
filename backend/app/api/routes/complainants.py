@@ -2,48 +2,48 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 
 from app.auth.permissions import require_roles
-from app.core.logging import app_logger
+from app.core.logging import complainant_logger
 from app.core.roles import UserRole
 from app.models.user import User
-from app.common.enums import SortOrder, Gender, IdentificationType
-from app.common.queries.victim_query import VictimQueryOptions
-from app.schemas.victim import (
-    VictimCreate,
-    VictimListResponse,
-    VictimResponse,
-    VictimSortField,
-    VictimUpdate,
+from app.common.enums import SortOrder, Gender
+from app.common.queries.complainant_query import ComplainantQueryOptions
+from app.schemas.complainant import (
+    ComplainantCreate,
+    ComplainantListResponse,
+    ComplainantResponse,
+    ComplainantSortField,
+    ComplainantUpdate,
 )
-from app.services.victim_service import VictimService
+from app.services.complainant_service import ComplainantService
 
 router = APIRouter()
 
 
 # ==============================================================
-# POST /cases/{case_id}/victims — Register Victim
+# POST /cases/{case_id}/complainants — Register Complainant
 # ==============================================================
 
 @router.post(
-    "/cases/{case_id}/victims",
-    response_model=VictimResponse,
+    "/cases/{case_id}/complainants",
+    response_model=ComplainantResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Register a New Victim for a Case",
+    summary="Register a New Complainant for a Case",
     description=(
-        "Register a new victim linked to the specified case ID. "
+        "Register a new complainant linked to the specified case ID. "
         "Requires ADMIN, SUPERVISOR, or INVESTIGATOR role. "
         "Performs format validation for mobile numbers and email, "
         "checks for duplicates, and ensures the referenced CaseMaster exists."
     ),
     responses={
-        201: {"description": "Victim registered successfully."},
+        201: {"description": "Complainant registered successfully."},
         404: {"description": "Case not found."},
-        409: {"description": "Duplicate victim name/phone in case."},
+        409: {"description": "Duplicate complainant name/phone in case."},
         422: {"description": "Invalid format or request body."},
     },
 )
-async def create_victim(
+async def create_complainant(
     case_id: str,
-    data: VictimCreate,
+    data: ComplainantCreate,
     current_user: User = Depends(
         require_roles(
             UserRole.ADMIN,
@@ -51,36 +51,36 @@ async def create_victim(
             UserRole.INVESTIGATOR,
         )
     ),
-    service: VictimService = Depends(),
-) -> VictimResponse:
-    """Register a new victim."""
-    app_logger.info(
-        "Create victim request | User=%s | CaseID=%s | Name=%s",
+    service: ComplainantService = Depends(),
+) -> ComplainantResponse:
+    """Register a new complainant."""
+    complainant_logger.info(
+        "Create complainant request | User=%s | CaseID=%s | Name=%s",
         current_user.employee_id,
         case_id,
         data.name,
     )
-    return service.create_victim(case_id, data)
+    return service.create_complainant(case_id, data)
 
 
 # ==============================================================
-# GET /cases/{case_id}/victims — List Case Victims
+# GET /cases/{case_id}/complainants — List Case Complainants
 # ==============================================================
 
 @router.get(
-    "/cases/{case_id}/victims",
-    response_model=VictimListResponse,
-    summary="List Victims for a Case",
+    "/cases/{case_id}/complainants",
+    response_model=ComplainantListResponse,
+    summary="List Complainants for a Case",
     description=(
-        "Retrieve a paginated list of victim summaries linked to a case. "
+        "Retrieve a paginated list of complainant summaries linked to a case. "
         "Supports query parameters for filtering, sorting, and pagination. "
         "Requires ADMIN, SUPERVISOR, INVESTIGATOR, or ANALYST role."
     ),
     responses={
-        200: {"description": "List of case victims retrieved successfully."},
+        200: {"description": "List of case complainants retrieved successfully."},
     },
 )
-async def list_case_victims(
+async def list_case_complainants(
     case_id: str,
     name: Optional[str] = Query(
         default=None,
@@ -98,28 +98,8 @@ async def list_case_victims(
         default=None,
         description="Filter by exact gender enum.",
     ),
-    age: Optional[int] = Query(
-        default=None,
-        description="Filter by exact age.",
-    ),
-    nationality: Optional[str] = Query(
-        default=None,
-        description="Filter by exact nationality.",
-    ),
-    occupation: Optional[str] = Query(
-        default=None,
-        description="Filter by exact occupation.",
-    ),
-    id_type: Optional[IdentificationType] = Query(
-        default=None,
-        description="Filter by exact identification type enum.",
-    ),
-    id_number: Optional[str] = Query(
-        default=None,
-        description="Filter by exact identification number.",
-    ),
-    sort_by: VictimSortField = Query(
-        default=VictimSortField.CREATED_DATE,
+    sort_by: ComplainantSortField = Query(
+        default=ComplainantSortField.CREATED_DATE,
         description="Field to sort the result list by.",
     ),
     sort_order: SortOrder = Query(
@@ -145,48 +125,43 @@ async def list_case_victims(
             UserRole.ANALYST,
         )
     ),
-    service: VictimService = Depends(),
-) -> VictimListResponse:
-    """List victims for a case."""
-    # Compose flat query parameters into structured VictimQueryOptions
-    options = VictimQueryOptions(
+    service: ComplainantService = Depends(),
+) -> ComplainantListResponse:
+    """List complainants for a case."""
+    # Compose flat query parameters into structured ComplainantQueryOptions
+    options = ComplainantQueryOptions(
         case_master_id=case_id,
         name=name,
         mobile_no=mobile_no,
         email=email,
         gender=gender,
-        age=age,
-        nationality=nationality,
-        occupation=occupation,
-        id_type=id_type,
-        id_number=id_number,
         sort_by=sort_by,
         sort_order=sort_order,
         page=page,
         page_size=page_size,
     )
-    return service.search_victims(options)
+    return service.search_complainants(options)
 
 
 # ==============================================================
-# GET /victims/{victim_id} — Retrieve Victim Details
+# GET /complainants/{complainant_id} — Retrieve Complainant Details
 # ==============================================================
 
 @router.get(
-    "/victims/{victim_id}",
-    response_model=VictimResponse,
-    summary="Get Victim Details",
+    "/complainants/{complainant_id}",
+    response_model=ComplainantResponse,
+    summary="Get Complainant Details",
     description=(
-        "Retrieve the full detail view of a victim record. "
+        "Retrieve the full detail view of a complainant record. "
         "Requires ADMIN, SUPERVISOR, INVESTIGATOR, or ANALYST role."
     ),
     responses={
-        200: {"description": "Victim details retrieved successfully."},
-        404: {"description": "Victim not found."},
+        200: {"description": "Complainant details retrieved successfully."},
+        404: {"description": "Complainant not found."},
     },
 )
-async def get_victim(
-    victim_id: str,
+async def get_complainant(
+    complainant_id: str,
     current_user: User = Depends(
         require_roles(
             UserRole.ADMIN,
@@ -195,35 +170,35 @@ async def get_victim(
             UserRole.ANALYST,
         )
     ),
-    service: VictimService = Depends(),
-) -> VictimResponse:
-    """Get victim by ID."""
-    return service.get_victim(victim_id)
+    service: ComplainantService = Depends(),
+) -> ComplainantResponse:
+    """Get complainant by ID."""
+    return service.get_complainant(complainant_id)
 
 
 # ==============================================================
-# PUT /victims/{victim_id} — Update Victim
+# PUT /complainants/{complainant_id} — Update Complainant
 # ==============================================================
 
 @router.put(
-    "/victims/{victim_id}",
-    response_model=VictimResponse,
-    summary="Update Victim",
+    "/complainants/{complainant_id}",
+    response_model=ComplainantResponse,
+    summary="Update Complainant",
     description=(
-        "Update details of an existing victim. "
+        "Update details of an existing complainant. "
         "Allows full and partial payload edits. "
         "Requires ADMIN, SUPERVISOR, or INVESTIGATOR role."
     ),
     responses={
-        200: {"description": "Victim updated successfully."},
-        404: {"description": "Victim not found."},
-        409: {"description": "Duplicate victim check failed."},
+        200: {"description": "Complainant updated successfully."},
+        404: {"description": "Complainant not found."},
+        409: {"description": "Duplicate complainant check failed."},
         422: {"description": "Invalid format or request body."},
     },
 )
-async def update_victim(
-    victim_id: str,
-    data: VictimUpdate,
+async def update_complainant(
+    complainant_id: str,
+    data: ComplainantUpdate,
     current_user: User = Depends(
         require_roles(
             UserRole.ADMIN,
@@ -231,48 +206,48 @@ async def update_victim(
             UserRole.INVESTIGATOR,
         )
     ),
-    service: VictimService = Depends(),
-) -> VictimResponse:
-    """Update victim by ID."""
-    app_logger.info(
-        "Update victim request | User=%s | ID=%s",
+    service: ComplainantService = Depends(),
+) -> ComplainantResponse:
+    """Update complainant by ID."""
+    complainant_logger.info(
+        "Update complainant request | User=%s | ID=%s",
         current_user.employee_id,
-        victim_id,
+        complainant_id,
     )
-    return service.update_victim(victim_id, data)
+    return service.update_complainant(complainant_id, data)
 
 
 # ==============================================================
-# DELETE /victims/{victim_id} — Delete Victim
+# DELETE /complainants/{complainant_id} — Delete Complainant
 # ==============================================================
 
 @router.delete(
-    "/victims/{victim_id}",
+    "/complainants/{complainant_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete Victim",
+    summary="Delete Complainant",
     description=(
-        "Remove a victim record from the system. "
+        "Remove a complainant record from the system. "
         "Requires ADMIN or SUPERVISOR role."
     ),
     responses={
-        204: {"description": "Victim deleted successfully."},
-        404: {"description": "Victim not found."},
+        204: {"description": "Complainant deleted successfully."},
+        404: {"description": "Complainant not found."},
     },
 )
-async def delete_victim(
-    victim_id: str,
+async def delete_complainant(
+    complainant_id: str,
     current_user: User = Depends(
         require_roles(
             UserRole.ADMIN,
             UserRole.SUPERVISOR,
         )
     ),
-    service: VictimService = Depends(),
+    service: ComplainantService = Depends(),
 ) -> None:
-    """Delete victim by ID."""
-    app_logger.info(
-        "Delete victim request | User=%s | ID=%s",
+    """Delete complainant by ID."""
+    complainant_logger.info(
+        "Delete complainant request | User=%s | ID=%s",
         current_user.employee_id,
-        victim_id,
+        complainant_id,
     )
-    service.delete_victim(victim_id)
+    service.delete_complainant(complainant_id)

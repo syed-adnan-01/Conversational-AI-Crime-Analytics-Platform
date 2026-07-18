@@ -2,25 +2,26 @@ from uuid import uuid4
 from typing import Optional
 from fastapi import Depends
 
-from app.common.exceptions import CaseNotFoundException, AccusedNotFoundException, DuplicateAccusedException
+from app.common.exceptions import CaseNotFoundException, ComplainantNotFoundException, DuplicateComplainantException
 from app.common.validators import validate_email, validate_phone
-from app.models.accused import Accused
+from app.core.logging import complainant_logger
+from app.models.complainant import Complainant
 from app.repository.case_repository import CaseRepository
-from app.repository.accused_repository import AccusedRepository
-from app.common.queries.accused_query import AccusedQueryOptions
-from app.schemas.accused import (
-    AccusedCreate,
-    AccusedResponse,
-    AccusedSummary,
-    AccusedListResponse,
+from app.repository.complainant_repository import ComplainantRepository
+from app.common.queries.complainant_query import ComplainantQueryOptions
+from app.schemas.complainant import (
+    ComplainantCreate,
+    ComplainantResponse,
+    ComplainantSummary,
+    ComplainantListResponse,
     PaginationMeta,
-    AccusedUpdate,
+    ComplainantUpdate,
 )
 
 
-class AccusedService:
+class ComplainantService:
     """
-    Service responsible for accused management business logic.
+    Service responsible for complainant management business logic.
 
     Uses constructor-based dependency injection to access repositories,
     ensuring isolation and clean testing patterns.
@@ -29,22 +30,22 @@ class AccusedService:
     def __init__(
         self,
         case_repo: CaseRepository = Depends(lambda: CaseRepository),
-        accused_repo: AccusedRepository = Depends(
-            lambda: AccusedRepository
+        complainant_repo: ComplainantRepository = Depends(
+            lambda: ComplainantRepository
         ),
     ):
         self.case_repo = case_repo
-        self.accused_repo = accused_repo
+        self.complainant_repo = complainant_repo
 
     # ----------------------------------------------------------
     # Create
     # ----------------------------------------------------------
 
-    def create_accused(
-        self, case_master_id: str, schema: AccusedCreate
-    ) -> AccusedResponse:
+    def create_complainant(
+        self, case_master_id: str, schema: ComplainantCreate
+    ) -> ComplainantResponse:
         """
-        Register a new accused for a specific case.
+        Register a new complainant for a specific case.
 
         Validates case existence, applies phone/email format checks,
         performs duplicate record verification, and generates the ID.
@@ -59,25 +60,24 @@ class AccusedService:
         email = validate_email(schema.email)
         name = schema.name.strip()
 
-        # 3. Check for Duplicate Accused in same case
-        # Duplicate detection is intentionally simple and designed to evolve
-        existing_accused_list = self.accused_repo.get_accused_by_case_id(
+        # 3. Check for Duplicate Complainants in same case
+        existing_complainants = self.complainant_repo.get_complainants_by_case_id(
             case_master_id
         )
-        for existing in existing_accused_list:
+        for existing in existing_complainants:
             # Check duplicate name & mobile number
             if (
                 existing.name.lower() == name.lower()
                 and existing.mobile_no == mobile_no
             ):
-                raise DuplicateAccusedException(name, case_master_id)
+                raise DuplicateComplainantException(name, case_master_id)
 
         # 4. Generate ID in the Service
-        accused_id = f"AC-{uuid4().hex[:12].upper()}"
+        complainant_id = f"CP-{uuid4().hex[:12].upper()}"
 
         # 5. Build Domain Entity
-        accused = Accused(
-            accused_id=accused_id,
+        complainant = Complainant(
+            complainant_id=complainant_id,
             case_master_id=case_master_id,
             name=name,
             gender=schema.gender,
@@ -87,47 +87,47 @@ class AccusedService:
             address=schema.address,
             nationality=schema.nationality,
             occupation=schema.occupation,
-            id_type=schema.id_type,
-            id_number=schema.id_number,
+            relationship_type=schema.relationship_type,
+            relative_name=schema.relative_name,
         )
 
         # 6. Persist
-        stored = self.accused_repo.create_accused(accused)
+        stored = self.complainant_repo.create_complainant(complainant)
 
-        return AccusedResponse.model_validate(stored)
+        return ComplainantResponse.model_validate(stored)
 
     # ----------------------------------------------------------
     # Retrieve
     # ----------------------------------------------------------
 
-    def get_accused(self, accused_id: str) -> AccusedResponse:
+    def get_complainant(self, complainant_id: str) -> ComplainantResponse:
         """
-        Retrieve an accused by ID.
-        Throws AccusedNotFoundException if the record is missing.
+        Retrieve a complainant by ID.
+        Throws ComplainantNotFoundException if the record is missing.
         """
-        accused = self.accused_repo.get_accused_by_id(accused_id)
-        if accused is None:
-            raise AccusedNotFoundException(accused_id)
+        complainant = self.complainant_repo.get_complainant_by_id(complainant_id)
+        if complainant is None:
+            raise ComplainantNotFoundException(complainant_id)
 
-        return AccusedResponse.model_validate(accused)
+        return ComplainantResponse.model_validate(complainant)
 
     # ----------------------------------------------------------
     # Update
     # ----------------------------------------------------------
 
-    def update_accused(
-        self, accused_id: str, schema: AccusedUpdate
-    ) -> AccusedResponse:
+    def update_complainant(
+        self, complainant_id: str, schema: ComplainantUpdate
+    ) -> ComplainantResponse:
         """
-        Update an existing accused record.
+        Update an existing complainant record.
 
         Validates inputs, verifies duplicate constraints, and replaces the
         entire domain object in the repository.
         """
         # 1. Fetch Existing
-        existing = self.accused_repo.get_accused_by_id(accused_id)
+        existing = self.complainant_repo.get_complainant_by_id(complainant_id)
         if existing is None:
-            raise AccusedNotFoundException(accused_id)
+            raise ComplainantNotFoundException(complainant_id)
 
         # 2. Format & Validate Inputs
         updates = schema.model_dump(exclude_unset=True)
@@ -144,59 +144,59 @@ class AccusedService:
         updated_mobile = updates.get("mobile_no", existing.mobile_no)
 
         if updated_name != existing.name or updated_mobile != existing.mobile_no:
-            existing_accused_list = self.accused_repo.get_accused_by_case_id(
+            existing_complainants = self.complainant_repo.get_complainants_by_case_id(
                 existing.case_master_id
             )
-            for other in existing_accused_list:
-                if other.accused_id == accused_id:
+            for other in existing_complainants:
+                if other.complainant_id == complainant_id:
                     continue
                 if (
                     other.name.lower() == updated_name.lower()
                     and other.mobile_no == updated_mobile
                 ):
-                    raise DuplicateAccusedException(
+                    raise DuplicateComplainantException(
                         updated_name, existing.case_master_id
                     )
 
         # 4. Perform Complete Domain Object Replacement
-        updated_accused = existing.model_copy(update=updates)
-        stored = self.accused_repo.update_accused(updated_accused)
+        updated_complainant = existing.model_copy(update=updates)
+        stored = self.complainant_repo.update_complainant(updated_complainant)
 
         if stored is None:
-            raise AccusedNotFoundException(accused_id)
+            raise ComplainantNotFoundException(complainant_id)
 
-        return AccusedResponse.model_validate(stored)
+        return ComplainantResponse.model_validate(stored)
 
     # ----------------------------------------------------------
     # Delete
     # ----------------------------------------------------------
 
-    def delete_accused(self, accused_id: str) -> None:
+    def delete_complainant(self, complainant_id: str) -> None:
         """
-        Delete an accused by ID.
+        Delete a complainant by ID.
         """
-        existing = self.accused_repo.get_accused_by_id(accused_id)
+        existing = self.complainant_repo.get_complainant_by_id(complainant_id)
         if existing is None:
-            raise AccusedNotFoundException(accused_id)
+            raise ComplainantNotFoundException(complainant_id)
 
-        self.accused_repo.delete_accused(accused_id)
+        self.complainant_repo.delete_complainant(complainant_id)
 
     # ----------------------------------------------------------
     # Search / List
     # ----------------------------------------------------------
 
-    def search_accused(
-        self, options: AccusedQueryOptions
-    ) -> AccusedListResponse:
+    def search_complainants(
+        self, options: ComplainantQueryOptions
+    ) -> ComplainantListResponse:
         """
-        Perform accused queries using a structured AccusedQueryOptions.
+        Perform complainant queries using a structured ComplainantQueryOptions.
         Returns a paginated list response.
         """
-        records, total = self.accused_repo.query_accused(options)
+        records, total = self.complainant_repo.query_complainants(options)
 
-        summaries = [AccusedSummary.model_validate(a) for a in records]
+        summaries = [ComplainantSummary.model_validate(r) for r in records]
         meta = PaginationMeta.calculate(
             total=total, page=options.page, page_size=options.page_size
         )
 
-        return AccusedListResponse(items=summaries, pagination=meta)
+        return ComplainantListResponse(items=summaries, pagination=meta)
