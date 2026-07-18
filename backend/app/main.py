@@ -1,46 +1,52 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
+from app.api.api import api_router
 from app.core.config import settings
-from app.core.logging import app_logger
-
 from app.core.exceptions import (
     CrimeSphereException,
     crimesphere_exception_handler,
     global_exception_handler,
 )
-
+from app.core.logging import app_logger
+from app.core.startup import initialize_application
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.request_logger import RequestLoggingMiddleware
 
-from app.api.api import api_router
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app_logger.info("Initializing CrimeSphere AI...")
 
-# --------------------------------------------------
-# Create FastAPI Application
-# --------------------------------------------------
+    initialize_application()
+
+    app_logger.info("Application initialization completed.")
+
+    yield
+
+    app_logger.info("CrimeSphere AI shutting down...")
+
 
 app = FastAPI(
-    title=settings.APP_NAME,
+    title="CrimeSphere AI",
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
+    lifespan=lifespan,
 )
 
 
-# --------------------------------------------------
-# Register Middlewares
-# --------------------------------------------------
-
-# FastAPI executes middleware in reverse order.
-# RequestIDMiddleware must execute before RequestLoggingMiddleware,
-# so RequestLoggingMiddleware is registered first.
+# ------------------------------
+# Middlewares
+# ------------------------------
 
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 
-# --------------------------------------------------
-# Register Exception Handlers
-# --------------------------------------------------
+# ------------------------------
+# Exception Handlers
+# ------------------------------
 
 app.add_exception_handler(
     CrimeSphereException,
@@ -53,15 +59,8 @@ app.add_exception_handler(
 )
 
 
-# --------------------------------------------------
-# Register API Routers
-# --------------------------------------------------
+# ------------------------------
+# API Routers
+# ------------------------------
 
 app.include_router(api_router)
-
-
-# --------------------------------------------------
-# Startup Log
-# --------------------------------------------------
-
-app_logger.info("CrimeSphere AI Backend Started")

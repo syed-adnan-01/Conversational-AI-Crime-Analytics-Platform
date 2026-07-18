@@ -42,6 +42,9 @@ class AuthService:
         # JWT payload
         token_data = {
             "sub": user.employee_id,
+            "uid": user.user_id,
+            "name": user.name,
+            "department": user.department,
             "role": user.role.value,
         }
 

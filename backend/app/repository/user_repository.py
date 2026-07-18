@@ -48,7 +48,6 @@ class UserRepository:
         Retrieve a user by employee ID.
         """
 
-        cls.initialize()
 
         return next(
             (
