@@ -320,6 +320,22 @@ class CaseService:
         # Persist via repository
         created = CaseRepository.create_case(case)
 
+        # Trigger Timeline Event
+        try:
+            from app.models.timeline import TimelineEventType
+            from app.services.timeline_service import TimelineService
+            timeline_svc = TimelineService()
+            timeline_svc.record_event(
+                case_master_id=created.case_master_id,
+                event_type=TimelineEventType.CASE_CREATED,
+                title=f"Case Registered: FIR {created.crime_no}",
+                description=f"Case '{created.crime_no}' was registered in the system.",
+                reference_id=created.case_master_id,
+                reference_type="CaseMaster",
+            )
+        except Exception as e:
+            case_logger.warning("Timeline event generation failed: %s", str(e))
+
         case_logger.info(
             "Case created | ID=%s | CrimeNo=%s",
             created.case_master_id,

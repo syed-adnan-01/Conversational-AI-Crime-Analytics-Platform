@@ -248,5 +248,9 @@ def run_tests():
         print("🎉 All Victim Management tests passed successfully! 🎉")
 
 
+def test_victims():
+    run_tests()
+
+
 if __name__ == "__main__":
     run_tests()

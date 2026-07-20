@@ -154,5 +154,9 @@ def run_tests():
         print("🎉 All Section Management tests passed successfully! 🎉")
 
 
+def test_sections():
+    run_tests()
+
+
 if __name__ == "__main__":
     run_tests()

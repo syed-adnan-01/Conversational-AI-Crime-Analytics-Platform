@@ -94,6 +94,22 @@ class AccusedService:
         # 6. Persist
         stored = self.accused_repo.create_accused(accused)
 
+        # 7. Trigger Timeline Event
+        try:
+            from app.models.timeline import TimelineEventType
+            from app.services.timeline_service import TimelineService
+            timeline_svc = TimelineService()
+            timeline_svc.record_event(
+                case_master_id=case_master_id,
+                event_type=TimelineEventType.ACCUSED_ADDED,
+                title=f"Accused Recorded: {name}",
+                description=f"Accused '{name}' named in case {case_master_id}.",
+                reference_id=accused_id,
+                reference_type="Accused",
+            )
+        except Exception as e:
+            pass
+
         return AccusedResponse.model_validate(stored)
 
     # ----------------------------------------------------------

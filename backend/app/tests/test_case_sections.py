@@ -163,7 +163,11 @@ def run_tests():
         assert len(res.json()["items"]) == 0
         print("Assignment removed successfully.")
 
-        print("🎉 All Case Section Association tests passed successfully! 🎉")
+        print("🎉 All Case-Section Association tests passed successfully! 🎉")
+
+
+def test_case_sections():
+    run_tests()
 
 
 if __name__ == "__main__":

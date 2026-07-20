@@ -238,6 +238,22 @@ class EvidenceService:
 
         stored = self.evidence_repo.create_evidence(evidence)
 
+        # Trigger Timeline Event
+        try:
+            from app.models.timeline import TimelineEventType
+            from app.services.timeline_service import TimelineService
+            timeline_svc = TimelineService()
+            timeline_svc.record_event(
+                case_master_id=case_id,
+                event_type=TimelineEventType.EVIDENCE_COLLECTED,
+                title=f"Evidence Collected: {stored.title}",
+                description=f"Evidence item '{stored.title}' ({stored.evidence_number}) collected by {stored.collected_by}.",
+                reference_id=evidence_id,
+                reference_type="Evidence",
+            )
+        except Exception as e:
+            pass
+
         # Call downstream hooks
         try:
             self.hook.on_evidence_created(stored)

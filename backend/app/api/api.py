@@ -9,15 +9,18 @@ from app.api.routes.acts import router as acts_router
 from app.api.routes.sections import router as sections_router
 from app.api.routes.case_sections import router as case_sections_router
 from app.api.routes.evidence import router as evidence_router
+from app.api.routes.timeline import router as timeline_router
+from app.api.routes.witnesses import router as witnesses_router
+from app.api.routes.arrests import router as arrests_router
+from app.api.routes.officers import router as officers_router
+from app.api.routes.chargesheets import router as chargesheets_router
+from app.api.routes.court_proceedings import router as court_proceedings_router
 from app.api.routes.config import router as config_router
 from app.api.routes.health import router as health_router
 from app.api.routes.home import router as home_router
 
 
-
 api_router = APIRouter()
-
-api_router.include_router(auth_router)
 
 # Home Routes
 api_router.include_router(
@@ -87,7 +90,44 @@ api_router.include_router(
     tags=["Act & Section Management"],
 )
 
+# Evidence Management Routes
 api_router.include_router(
     evidence_router,
     tags=["Evidence Management"],
+)
+
+# Investigation Timeline Routes
+api_router.include_router(
+    timeline_router,
+    tags=["Investigation Timeline"],
+)
+
+# Witness Management Routes
+api_router.include_router(
+    witnesses_router,
+    tags=["Witness Management"],
+)
+
+# Arrest Management Routes
+api_router.include_router(
+    arrests_router,
+    tags=["Arrest Management"],
+)
+
+# Officer Master & Assignment Routes
+api_router.include_router(
+    officers_router,
+    tags=["Officer Management"],
+)
+
+# Chargesheet Management Routes
+api_router.include_router(
+    chargesheets_router,
+    tags=["Chargesheet Management"],
+)
+
+# Court Proceedings Routes
+api_router.include_router(
+    court_proceedings_router,
+    tags=["Court Proceedings"],
 )

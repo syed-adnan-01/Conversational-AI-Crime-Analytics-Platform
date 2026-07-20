@@ -94,6 +94,22 @@ class ComplainantService:
         # 6. Persist
         stored = self.complainant_repo.create_complainant(complainant)
 
+        # 7. Trigger Timeline Event
+        try:
+            from app.models.timeline import TimelineEventType
+            from app.services.timeline_service import TimelineService
+            timeline_svc = TimelineService()
+            timeline_svc.record_event(
+                case_master_id=case_master_id,
+                event_type=TimelineEventType.COMPLAINANT_REGISTERED,
+                title=f"Complainant Registered: {name}",
+                description=f"Complainant '{name}' recorded for case {case_master_id}.",
+                reference_id=complainant_id,
+                reference_type="Complainant",
+            )
+        except Exception as e:
+            complainant_logger.warning("Timeline event generation failed: %s", str(e))
+
         return ComplainantResponse.model_validate(stored)
 
     # ----------------------------------------------------------

@@ -179,3 +179,114 @@ class DuplicateEvidenceException(CrimeSphereException):
             message=f"Evidence number '{evidence_number}' is already registered for case: {case_id}",
             status_code=409,
         )
+
+
+class WitnessNotFoundException(CrimeSphereException):
+    """Raised when a requested witness does not exist."""
+
+    def __init__(self, witness_id: str):
+        super().__init__(
+            message=f"Witness not found: {witness_id}",
+            status_code=404,
+        )
+
+
+class DuplicateWitnessException(CrimeSphereException):
+    """Raised when a witness already exists for a case."""
+
+    def __init__(self, name: str, case_id: str):
+        super().__init__(
+            message=f"Witness '{name}' is already registered for case: {case_id}",
+            status_code=409,
+        )
+
+
+class ArrestNotFoundException(CrimeSphereException):
+    """Raised when a requested arrest record does not exist."""
+
+    def __init__(self, arrest_id: str):
+        super().__init__(
+            message=f"Arrest record not found: {arrest_id}",
+            status_code=404,
+        )
+
+
+class DuplicateArrestException(CrimeSphereException):
+    """Raised when an active arrest already exists for an accused in a case."""
+
+    def __init__(self, accused_id: str, case_id: str):
+        super().__init__(
+            message=f"Active arrest already exists for accused '{accused_id}' in case: {case_id}",
+            status_code=409,
+        )
+
+
+class ChargesheetNotFoundException(CrimeSphereException):
+    """Raised when a requested chargesheet does not exist."""
+
+    def __init__(self, chargesheet_id: str):
+        super().__init__(
+            message=f"Chargesheet not found: {chargesheet_id}",
+            status_code=404,
+        )
+
+
+class DuplicateChargesheetNumberException(CrimeSphereException):
+    """Raised when a chargesheet number already exists."""
+
+    def __init__(self, chargesheet_number: str):
+        super().__init__(
+            message=f"Chargesheet number already exists: {chargesheet_number}",
+            status_code=409,
+        )
+
+
+class CourtProceedingNotFoundException(CrimeSphereException):
+    """Raised when a requested court proceeding does not exist."""
+
+    def __init__(self, proceeding_id: str):
+        super().__init__(
+            message=f"Court proceeding not found: {proceeding_id}",
+            status_code=404,
+        )
+
+
+class OfficerNotFoundException(CrimeSphereException):
+    """Raised when a requested officer master record does not exist."""
+
+    def __init__(self, officer_id: str):
+        super().__init__(
+            message=f"Officer not found: {officer_id}",
+            status_code=404,
+        )
+
+
+class DuplicateOfficerBadgeException(CrimeSphereException):
+    """Raised when an officer badge number already exists."""
+
+    def __init__(self, badge_number: str):
+        super().__init__(
+            message=f"Officer with badge number '{badge_number}' already exists.",
+            status_code=409,
+        )
+
+
+class OfficerAssignmentNotFoundException(CrimeSphereException):
+    """Raised when a requested officer assignment does not exist."""
+
+    def __init__(self, assignment_id: str):
+        super().__init__(
+            message=f"Officer assignment not found: {assignment_id}",
+            status_code=404,
+        )
+
+
+class TimelineEventNotFoundException(CrimeSphereException):
+    """Raised when a requested timeline event does not exist."""
+
+    def __init__(self, event_id: str):
+        super().__init__(
+            message=f"Timeline event not found: {event_id}",
+            status_code=404,
+        )
+

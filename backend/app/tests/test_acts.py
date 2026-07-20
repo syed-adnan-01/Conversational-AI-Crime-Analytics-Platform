@@ -166,5 +166,9 @@ def run_tests():
         print("🎉 All Act Management tests passed successfully! 🎉")
 
 
+def test_acts():
+    run_tests()
+
+
 if __name__ == "__main__":
     run_tests()

@@ -225,6 +225,9 @@ def run_tests():
         print("🎉 All Complainant Management tests passed successfully! 🎉")
 
 
+def test_complainants():
+    run_tests()
+
 
 if __name__ == "__main__":
     run_tests()

@@ -125,6 +125,23 @@ class CaseSectionService:
         )
 
         stored = self.case_section_repo.assign_section_to_case(association)
+
+        # Trigger Timeline Event
+        try:
+            from app.models.timeline import TimelineEventType
+            from app.services.timeline_service import TimelineService
+            timeline_svc = TimelineService()
+            timeline_svc.record_event(
+                case_master_id=case_id,
+                event_type=TimelineEventType.SECTION_ADDED,
+                title=f"Section Invoked: {section.section_number}",
+                description=f"Section '{section.section_number}' ({section.title}) invoked for case {case_id}.",
+                reference_id=association_id,
+                reference_type="CaseSectionAssociation",
+            )
+        except Exception as e:
+            pass
+
         return CaseSectionResponse.model_validate(stored)
 
     # ----------------------------------------------------------

@@ -94,6 +94,22 @@ class VictimService:
         # 6. Persist
         stored = self.victim_repo.create_victim(victim)
 
+        # 7. Trigger Timeline Event
+        try:
+            from app.models.timeline import TimelineEventType
+            from app.services.timeline_service import TimelineService
+            timeline_svc = TimelineService()
+            timeline_svc.record_event(
+                case_master_id=case_master_id,
+                event_type=TimelineEventType.VICTIM_ADDED,
+                title=f"Victim Recorded: {name}",
+                description=f"Victim '{name}' added to case {case_master_id}.",
+                reference_id=victim_id,
+                reference_type="Victim",
+            )
+        except Exception as e:
+            pass
+
         return VictimResponse.model_validate(stored)
 
     # ----------------------------------------------------------
