@@ -7,8 +7,13 @@ Module  : AI Compressors Subsystem
 Purpose : Abstract base class for context window compression algorithms.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from app.ai.retrieval.retrieval_models import RetrievedChunk
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.ai.retrieval.retrieval_models import RetrievedChunk
 
 
 class BaseCompressor(ABC):

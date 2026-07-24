@@ -13,7 +13,8 @@ import time
 import uuid
 from typing import Optional
 
-from app.ai.compressors import BaseCompressor, SummaryCompressor
+from app.ai.compressors.base import BaseCompressor
+from app.ai.compressors.summary_compressor import SummaryCompressor
 from app.ai.context_assembly.assembler import ContextAssembler
 from app.ai.query_processing import QueryClassifier, QueryExpander, QueryNormalizer
 from app.ai.rerankers import BaseReranker, DiversityReranker, ScoreReranker

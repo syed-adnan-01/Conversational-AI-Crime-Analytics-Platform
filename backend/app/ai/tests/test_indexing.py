@@ -20,7 +20,7 @@ from app.ai.tests.test_context_builder import clear_all_repositories, setup_samp
 from app.ai.vector_store.vector_models import SearchFilter, VectorSearchRequest
 from app.ai.vector_store.vector_service import VectorService
 from app.main import app
-from app.models.evidence import Evidence
+from app.models.evidence import Evidence, EvidenceStatus, EvidenceType
 from app.repository.evidence_repository import EvidenceRepository
 
 
@@ -48,14 +48,15 @@ def test_index_manager_lifecycle_and_hash_skipping():
     assert meta2.indexed_at == meta1.indexed_at  # Unchanged timestamp
 
     # 3. Add new evidence to change context_hash
+    assert meta1.indexed_at is not None
     new_evidence = Evidence(
         evidence_id="EVI-999",
         case_master_id=case_id,
         evidence_number="E-99",
         title="Audio Recording of Extortion",
         description="Audio clip",
-        evidence_type="AUDIO",
-        status="COLLECTED",
+        evidence_type=EvidenceType.AUDIO,
+        status=EvidenceStatus.COLLECTED,
         collected_by="OFF-001",
         collection_date=meta1.indexed_at,
         collection_location="Station",

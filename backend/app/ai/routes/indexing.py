@@ -13,7 +13,11 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from app.ai.indexing.background_tasks import run_background_indexing
-from app.ai.indexing.index_models import IndexListResponse, IndexMetadata
+from app.ai.indexing.index_models import (
+    IndexListResponse,
+    IndexMetadata,
+    IndexStatus,
+)
 from app.ai.indexing.indexing_service import IndexingService
 from app.ai.vector_store.vector_models import (
     VectorSearchRequest,
@@ -179,16 +183,16 @@ async def delete_index(
 )
 async def index_case(
     case_id: str,
+    background_tasks: BackgroundTasks,
     force: bool = Query(default=False, description="Force re-indexing even if context_hash is unchanged"),
     background: bool = Query(default=False, description="Execute indexing as a background task"),
-    background_tasks: BackgroundTasks = None,
     current_user: User = Depends(get_current_user),
 ) -> IndexMetadata:
     """Build or update case index."""
-    if background and background_tasks is not None:
+    if background:
         background_tasks.add_task(run_background_indexing, case_id, force)
         meta = IndexingService.get_status(case_id)
-        meta.status = "INDEXING"
+        meta.status = IndexStatus.INDEXING
         return meta
 
     return IndexingService.index_case(case_id=case_id, force=force)

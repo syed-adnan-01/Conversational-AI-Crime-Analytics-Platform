@@ -7,8 +7,14 @@ Module  : AI Compressors Subsystem
 Purpose : Context compression algorithm filtering near-duplicate passages.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from app.ai.compressors.base import BaseCompressor
-from app.ai.retrieval.retrieval_models import RetrievedChunk
+
+if TYPE_CHECKING:
+    from app.ai.retrieval.retrieval_models import RetrievedChunk
 
 
 class SummaryCompressor(BaseCompressor):

@@ -38,8 +38,9 @@ class ChromaDBProvider(VectorStoreProvider):
 
         if HAS_CHROMADB and chromadb is not None:
             try:
-                self._client = chromadb.PersistentClient(path=self.persist_dir)
-                self._collection = self._client.get_or_create_collection(name="crimesphere_cases")
+                client = chromadb.PersistentClient(path=self.persist_dir)
+                self._client = client
+                self._collection = client.get_or_create_collection(name="crimesphere_cases")
             except Exception:
                 self._client = None
                 self._collection = None
@@ -151,7 +152,7 @@ class ChromaDBProvider(VectorStoreProvider):
             return self._fallback.count(case_id)
 
     def clear(self) -> bool:
-        if self._collection is None:
+        if self._collection is None or self._client is None:
             return self._fallback.clear()
         try:
             self._client.delete_collection("crimesphere_cases")
