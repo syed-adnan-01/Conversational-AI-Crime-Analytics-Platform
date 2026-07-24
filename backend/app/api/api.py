@@ -15,12 +15,16 @@ from app.api.routes.arrests import router as arrests_router
 from app.api.routes.officers import router as officers_router
 from app.api.routes.chargesheets import router as chargesheets_router
 from app.api.routes.court_proceedings import router as court_proceedings_router
+from app.ai.routes.context import router as ai_context_router
+from app.ai.routes.indexing import router as ai_indexing_router
+from app.ai.routes.retrieval import router as ai_retrieval_router
 from app.api.routes.config import router as config_router
 from app.api.routes.health import router as health_router
 from app.api.routes.home import router as home_router
 
 
 api_router = APIRouter()
+
 
 # Home Routes
 api_router.include_router(
@@ -130,4 +134,25 @@ api_router.include_router(
 api_router.include_router(
     court_proceedings_router,
     tags=["Court Proceedings"],
+)
+
+# AI Context Builder Routes
+api_router.include_router(
+    ai_context_router,
+    prefix="/ai/context",
+    tags=["AI Context Builder"],
+)
+
+# AI Embedding & Vector Indexing Routes
+api_router.include_router(
+    ai_indexing_router,
+    prefix="/ai/index",
+    tags=["AI Vector Indexing"],
+)
+
+# AI RAG Retrieval Engine Routes
+api_router.include_router(
+    ai_retrieval_router,
+    prefix="/ai/retrieve",
+    tags=["AI RAG Retrieval"],
 )
