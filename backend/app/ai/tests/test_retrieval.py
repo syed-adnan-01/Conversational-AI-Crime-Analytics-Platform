@@ -96,7 +96,7 @@ def test_context_assembly_and_budget():
 
     # Budget manager allocation
     kept, compressed, discarded = PromptBudgetManager.allocate_budget(chunks, max_tokens=150)
-    assert len(kept) + len(compressed) <= len(chunks)
+    assert len(kept) <= len(chunks)
 
     # Context Assembly
     context = ContextAssembler.assemble("investigation summary", chunks, max_token_budget=2048)

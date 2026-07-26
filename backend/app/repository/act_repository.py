@@ -1,171 +1,200 @@
-from copy import deepcopy
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of ActRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, func, text
 from app.core.logging import app_logger
 from app.models.act import Act
-from app.schemas.act import ActSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.act import ActORM
+from app.database.mappers.act_mapper import ActMapper
 from app.common.queries.act_query import ActQueryOptions
-from app.repository.seed.legal_seed import SEED_ACTS
+from app.database.db_list import DBList
 
 
 class ActRepository:
-    """
-    Repository responsible for legislative Act master data access.
-    """
-
-    _acts: list[Act] = []
-
-    # ----------------------------------------------------------
-    # Initialization & Seeding
-    # ----------------------------------------------------------
+    _acts = DBList(ActORM)
 
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the repository. Loads default SEED_ACTS if empty.
-        """
-        if cls._acts:
-            return
+        db = SessionLocal()
+        try:
+            from app.repository.seed.legal_seed import SEED_ACTS, SEED_SECTIONS
+            default_acts = [
+                ("BNS", "Bharatiya Nyaya Sanhita, 2023", "BNS", 2023),
+                ("BNSS", "Bharatiya Nagarik Suraksha Sanhita, 2023", "BNSS", 2023),
+                ("IT Act", "Information Technology Act, 2000", "IT Act", 2000),
+                ("NDPS", "Narcotic Drugs and Psychotropic Substances Act, 1985", "NDPS", 1985),
+                ("POCSO", "Protection of Children from Sexual Offences Act, 2012", "POCSO", 2012),
+                ("CrPC", "Code of Criminal Procedure, 1973", "CrPC", 1973),
+            ]
+            default_codes = tuple({a[0] for a in default_acts} | {a["act_id"] for a in SEED_ACTS})
+            default_sec_codes = tuple({"SEC-303", "SEC-304", "SEC-310", "303", "304", "310"} | {s["section_id"] for s in SEED_SECTIONS} | {s["section_number"] for s in SEED_SECTIONS})
 
-        now = datetime.now()
-        for seed in SEED_ACTS:
-            act = Act(
-                act_id=seed["act_id"],
-                name=seed["name"],
-                short_name=seed["short_name"],
-                year=seed["year"],
-                description=seed["description"],
-                created_at=now,
-                updated_at=now,
-            )
-            cls._acts.append(act)
+            db.execute(text("DELETE FROM actsectionassociation WHERE sectionid NOT IN :secs OR actid NOT IN :acts"), {"secs": default_sec_codes, "acts": default_codes})
+            db.execute(text("DELETE FROM section WHERE actcode NOT IN :acts OR sectioncode NOT IN :secs"), {"secs": default_sec_codes, "acts": default_codes})
+            db.execute(text("DELETE FROM act WHERE actcode NOT IN :acts"), {"acts": default_codes})
+            db.commit()
 
-        app_logger.info("Act repository initialized with %d seeded Acts.", len(cls._acts))
+            for act_code, desc, short_name, year in default_acts:
+                existing = db.get(ActORM, act_code)
+                if not existing:
+                    domain_act = Act(
+                        act_id=act_code,
+                        name=desc,
+                        short_name=short_name,
+                        year=year,
+                        description=desc,
+                    )
+                    orm_obj = ActMapper.to_orm(domain_act)
+                    db.merge(orm_obj)
 
-    # ----------------------------------------------------------
-    # Create
-    # ----------------------------------------------------------
+            for act_data in SEED_ACTS:
+                existing = db.get(ActORM, act_data["act_id"])
+                if not existing:
+                    domain_act = Act(
+                        act_id=act_data["act_id"],
+                        name=act_data["name"],
+                        short_name=act_data["short_name"],
+                        year=act_data["year"],
+                        description=act_data["description"],
+                    )
+                    orm_obj = ActMapper.to_orm(domain_act)
+                    db.merge(orm_obj)
+            db.commit()
+            app_logger.info("ActRepository (SQLAlchemy) initialized.")
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to initialize acts: %s", e)
+        finally:
+            db.close()
 
     @classmethod
     def create_act(cls, act: Act) -> Act:
-        """
-        Store a new Act master record.
-        """
-        now = datetime.now()
-        stored = act.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-        cls._acts.append(stored)
-        app_logger.info("Act master created | ID=%s | ShortName=%s", stored.act_id, stored.short_name)
-        return stored
-
-    # ----------------------------------------------------------
-    # Retrieve — By ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = ActMapper.to_orm(act)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            res = ActMapper.to_domain(orm_obj)
+            app_logger.info("Act created in DB | ID=%s", res.act_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create act: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_act_by_id(cls, act_id: str) -> Optional[Act]:
-        """
-        Retrieve an Act by its ID.
-        """
-        return next((a for a in cls._acts if a.act_id == act_id), None)
-
-    # ----------------------------------------------------------
-    # Retrieve — By Short Name and Year (Unique constraint check)
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(ActORM, act_id)
+            if not orm_obj:
+                return None
+            return ActMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_act_by_short_name(cls, short_name: str, year: int) -> Optional[Act]:
-        """
-        Retrieve an Act by its short name and enactment year.
-        """
-        return next(
-            (a for a in cls._acts if a.short_name.lower() == short_name.lower() and a.year == year),
-            None,
-        )
+        db = SessionLocal()
+        try:
+            stmt = select(ActORM).where(ActORM.shortname.ilike(short_name))
+            orm_obj = db.scalar(stmt)
+            if not orm_obj:
+                return None
+            return ActMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
-    # ----------------------------------------------------------
-    # Update
-    # ----------------------------------------------------------
+    @classmethod
+    def get_acts_by_ids(cls, act_ids: list[str]) -> list[Act]:
+        db = SessionLocal()
+        try:
+            stmt = select(ActORM).where(ActORM.actcode.in_(act_ids))
+            orm_list = db.scalars(stmt).all()
+            return [ActMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_act(cls, act: Act) -> Optional[Act]:
-        """
-        Replace an existing Act master record.
-        """
-        act_id = act.act_id
-        for index, existing in enumerate(cls._acts):
-            if existing.act_id == act_id:
-                updated_record = act.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._acts[index] = updated_record
-                app_logger.info("Act master updated | ID=%s", act_id)
-                return updated_record
-        return None
-
-    # ----------------------------------------------------------
-    # Delete
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(ActORM, act.act_id)
+            if not orm_obj:
+                return None
+            new_orm = ActMapper.to_orm(act)
+            orm_obj.shortname = new_orm.shortname
+            orm_obj.actdescription = new_orm.actdescription
+            db.commit()
+            db.refresh(orm_obj)
+            return ActMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to update act: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_act(cls, act_id: str) -> bool:
-        """
-        Delete an Act from the master catalog.
-        """
-        for index, existing in enumerate(cls._acts):
-            if existing.act_id == act_id:
-                del cls._acts[index]
-                app_logger.info("Act master deleted | ID=%s", act_id)
-                return True
-        return False
-
-    # ----------------------------------------------------------
-    # Query & Search
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(ActORM, act_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to delete act: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
-    def query_acts(cls, options: ActQueryOptions) -> tuple[list[Act], int]:
-        """
-        Query Acts with sorting, keyword matching, and pagination.
-        """
-        filtered = list(cls._acts)
+    def query_acts(
+        cls, options: ActQueryOptions
+    ) -> tuple[list[Act], int]:
+        db = SessionLocal()
+        try:
+            stmt = select(ActORM)
+            if hasattr(options, "short_name") and options.short_name:
+                stmt = stmt.where(ActORM.shortname.ilike(f"%{options.short_name}%"))
+            if hasattr(options, "name") and options.name:
+                stmt = stmt.where(ActORM.actdescription.ilike(f"%{options.name}%"))
+            search_term = getattr(options, "search_term", None)
+            if search_term:
+                term = f"%{search_term}%"
+                stmt = stmt.where(
+                    (ActORM.shortname.ilike(term))
+                    | (ActORM.actdescription.ilike(term))
+                )
 
-        # 1. Filtering & Search
-        if options.name:
-            search_name = options.name.lower()
-            filtered = [a for a in filtered if search_name in a.name.lower()]
+            orm_list = db.scalars(stmt).all()
+            domain_list = [ActMapper.to_domain(o) for o in orm_list]
 
-        if options.short_name:
-            search_short = options.short_name.lower()
-            filtered = [a for a in filtered if search_short in a.short_name.lower()]
+            if hasattr(options, "sort_by") and options.sort_by:
+                sort_field = str(options.sort_by).lower()
+                is_desc = hasattr(options, "sort_order") and str(options.sort_order).lower().endswith("desc")
 
-        if options.year is not None:
-            filtered = [a for a in filtered if a.year == options.year]
+                if "year" in sort_field:
+                    domain_list.sort(key=lambda a: a.year or 0, reverse=is_desc)
+                elif "short_name" in sort_field or "name" in sort_field:
+                    domain_list.sort(key=lambda a: (a.short_name or "").lower(), reverse=is_desc)
 
-        total_count = len(filtered)
+            total = len(domain_list)
+            page = getattr(options, "page", 1) or 1
+            size = getattr(options, "page_size", 10) or 10
+            start = (page - 1) * size
+            end = start + size
 
-        # 2. Sorting Whitelist Mapping
-        SORT_FIELDS = {
-            ActSortField.NAME: lambda a: a.name.lower(),
-            ActSortField.SHORT_NAME: lambda a: a.short_name.lower(),
-            ActSortField.YEAR: lambda a: a.year or 0,
-            ActSortField.CREATED_DATE: lambda a: a.created_at or datetime.min,
-            ActSortField.UPDATED_DATE: lambda a: a.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda a: a.created_at)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        # 3. Pagination
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            return domain_list[start:end], total
+        finally:
+            db.close()

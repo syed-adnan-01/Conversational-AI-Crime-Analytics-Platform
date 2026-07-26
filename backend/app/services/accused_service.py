@@ -68,7 +68,7 @@ class AccusedService:
             # Check duplicate name & mobile number
             if (
                 existing.name.lower() == name.lower()
-                and existing.mobile_no == mobile_no
+                and (not existing.mobile_no or existing.mobile_no == mobile_no)
             ):
                 raise DuplicateAccusedException(name, case_master_id)
 

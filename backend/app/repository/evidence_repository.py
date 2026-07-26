@@ -1,216 +1,147 @@
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of EvidenceRepository.
+"""
 
+from typing import Optional
+from uuid import uuid4
+from sqlalchemy import select, func
 from app.core.logging import app_logger
 from app.models.evidence import Evidence
-from app.schemas.evidence import EvidenceSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.evidence import EvidenceORM
+from app.database.mappers.evidence_mapper import EvidenceMapper
 from app.common.queries.evidence_query import EvidenceQueryOptions
 
 
+from app.database.db_list import DBList
+
+
 class EvidenceRepository:
-    """
-    Repository responsible for evidence data access operations.
-
-    During development, evidence is stored in an in-memory collection.
-    The interface decouples Service/API layers from physical storage.
-    """
-
-    _evidence_list: list[Evidence] = []
-
-    # ----------------------------------------------------------
-    # Initialization
-    # ----------------------------------------------------------
-
+    _evidence_list = DBList(EvidenceORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory evidence store.
-        """
-        if cls._evidence_list:
-            return
-
-        app_logger.info("Evidence repository initialized.")
-
-    # ----------------------------------------------------------
-    # Create
-    # ----------------------------------------------------------
+        app_logger.info("EvidenceRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_evidence(cls, evidence: Evidence) -> Evidence:
-        """
-        Store an Evidence object in the repository.
-        Assigns audit timestamps before storage.
-        """
-        now = datetime.now()
-        stored = evidence.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-        cls._evidence_list.append(stored)
-
-        app_logger.info(
-            "Evidence stored | ID=%s | CaseMasterID=%s | EvidenceNo=%s",
-            stored.evidence_id,
-            stored.case_master_id,
-            stored.evidence_number,
-        )
-
-        return stored
-
-    # ----------------------------------------------------------
-    # Retrieve — By ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            if not evidence.evidence_id:
+                evidence = evidence.model_copy(update={"evidence_id": f"EV-{uuid4().hex[:12].upper()}"})
+            orm_obj = EvidenceMapper.to_orm(evidence)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            res = EvidenceMapper.to_domain(orm_obj)
+            app_logger.info("Evidence stored in DB | ID=%s", res.evidence_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create evidence: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_evidence_by_id(cls, evidence_id: str) -> Optional[Evidence]:
-        """
-        Retrieve a single evidence record by its ID.
-        """
-        return next(
-            (e for e in cls._evidence_list if e.evidence_id == evidence_id),
-            None,
-        )
-
-    # ----------------------------------------------------------
-    # Retrieve — By Case Master ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(EvidenceORM, evidence_id)
+            if not orm_obj:
+                return None
+            return EvidenceMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_case_evidence(cls, case_master_id: str) -> list[Evidence]:
-        """
-        Retrieve all evidence associated with a specific case directly.
-        """
-        return [e for e in cls._evidence_list if e.case_master_id == case_master_id]
-
-    # ----------------------------------------------------------
-    # Update
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            stmt = select(EvidenceORM).where(EvidenceORM.case_master_id == case_master_id)
+            orm_list = db.scalars(stmt).all()
+            return [EvidenceMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_evidence(cls, evidence: Evidence) -> Optional[Evidence]:
-        """
-        Replace a stored evidence record with the provided object.
-        Performs a full replacement, updating updated_at timestamp.
-        """
-        evidence_id = evidence.evidence_id
-        for index, existing in enumerate(cls._evidence_list):
-            if existing.evidence_id == evidence_id:
-                updated_record = evidence.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._evidence_list[index] = updated_record
-                app_logger.info("Evidence updated | ID=%s", evidence_id)
-                return updated_record
-
-        return None
-
-    # ----------------------------------------------------------
-    # Delete
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            if not evidence.evidence_id:
+                return None
+            orm_obj = db.get(EvidenceORM, evidence.evidence_id)
+            if not orm_obj:
+                return None
+            new_orm = EvidenceMapper.to_orm(evidence)
+            orm_obj.description = new_orm.description
+            orm_obj.storage_location = new_orm.storage_location
+            db.commit()
+            db.refresh(orm_obj)
+            return EvidenceMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to update evidence: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_evidence(cls, evidence_id: str) -> bool:
-        """
-        Delete an evidence record by its ID.
-        """
-        for index, existing in enumerate(cls._evidence_list):
-            if existing.evidence_id == evidence_id:
-                del cls._evidence_list[index]
-                app_logger.info("Evidence deleted | ID=%s", evidence_id)
-                return True
-
-        return False
-
-    # ----------------------------------------------------------
-    # Query & Search
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(EvidenceORM, evidence_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to delete evidence: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
     def query_evidence(
         cls, options: EvidenceQueryOptions
     ) -> tuple[list[Evidence], int]:
-        """
-        Query evidence with filtering, keyword search, sorting, and pagination.
-        Returns a tuple of (items_subset, total_count).
-        """
-        filtered = list(cls._evidence_list)
+        db = SessionLocal()
+        try:
+            stmt = select(EvidenceORM)
+            if options.case_master_id:
+                stmt = stmt.where(EvidenceORM.case_master_id == options.case_master_id)
+            if options.evidence_type:
+                ev_type_val = options.evidence_type.value if hasattr(options.evidence_type, "value") else str(options.evidence_type)
+                stmt = stmt.where(EvidenceORM.evidence_type == ev_type_val)
+            if options.collected_by:
+                stmt = stmt.where(EvidenceORM.collected_by.ilike(f"%{options.collected_by}%"))
+            if options.evidence_number:
+                stmt = stmt.where(EvidenceORM.evidence_number.ilike(f"%{options.evidence_number}%"))
 
-        # 1. Exact Field Filtering
-        if options.case_master_id:
-            filtered = [
-                e for e in filtered if e.case_master_id == options.case_master_id
-            ]
+            orm_list = db.scalars(stmt).all()
+            domains = [EvidenceMapper.to_domain(o) for o in orm_list]
 
-        if options.evidence_type:
-            filtered = [e for e in filtered if e.evidence_type == options.evidence_type]
+            # Filter non-ORM or cached domain properties
+            filtered = []
+            for item in domains:
+                if options.title and options.title.lower() not in item.title.lower():
+                    continue
+                if options.status and item.status != options.status:
+                    continue
+                if options.victim_id and item.victim_id != options.victim_id:
+                    continue
+                if options.accused_id and item.accused_id != options.accused_id:
+                    continue
+                if options.section_id and item.section_id != options.section_id:
+                    continue
+                filtered.append(item)
 
-        if options.evidence_category:
-            filtered = [e for e in filtered if e.evidence_category == options.evidence_category]
-
-        if options.status:
-            filtered = [e for e in filtered if e.status == options.status]
-
-        if options.custody_status:
-            filtered = [e for e in filtered if e.custody_status == options.custody_status]
-
-        if options.victim_id:
-            filtered = [e for e in filtered if e.victim_id == options.victim_id]
-
-        if options.accused_id:
-            filtered = [e for e in filtered if e.accused_id == options.accused_id]
-
-        if options.section_id:
-            filtered = [e for e in filtered if e.section_id == options.section_id]
-
-        # 2. Case-Insensitive Keyword / Sub-string Searches
-        if options.evidence_number:
-            search_num = options.evidence_number.lower()
-            filtered = [
-                e for e in filtered if search_num in e.evidence_number.lower()
-            ]
-
-        if options.title:
-            search_title = options.title.lower()
-            filtered = [
-                e for e in filtered if search_title in e.title.lower()
-            ]
-
-        if options.description:
-            search_desc = options.description.lower()
-            filtered = [
-                e for e in filtered if search_desc in e.description.lower()
-            ]
-
-        if options.collected_by:
-            search_by = options.collected_by.lower()
-            filtered = [
-                e for e in filtered if search_by in e.collected_by.lower()
-            ]
-
-        total_count = len(filtered)
-
-        # 3. Sorting (Whitelist based)
-        SORT_FIELDS = {
-            EvidenceSortField.EVIDENCE_NUMBER: lambda e: e.evidence_number.lower(),
-            EvidenceSortField.TITLE: lambda e: e.title.lower(),
-            EvidenceSortField.TYPE: lambda e: e.evidence_type.value,
-            EvidenceSortField.STATUS: lambda e: e.status.value,
-            EvidenceSortField.COLLECTION_DATE: lambda e: e.collection_date or datetime.min,
-            EvidenceSortField.CREATED_DATE: lambda e: e.created_at or datetime.min,
-            EvidenceSortField.UPDATED_DATE: lambda e: e.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda e: e.created_at)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        # 4. Pagination
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            total = len(filtered)
+            page = options.page or 1
+            size = options.page_size or 10
+            start = (page - 1) * size
+            end = start + size
+            return filtered[start:end], total
+        finally:
+            db.close()

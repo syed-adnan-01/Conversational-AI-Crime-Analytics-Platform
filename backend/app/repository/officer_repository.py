@@ -1,123 +1,125 @@
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of OfficerRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, func
 from app.core.logging import app_logger
 from app.models.officer import OfficerMaster, OfficerAssignment
-from app.schemas.officer import OfficerSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.lookups import EmployeeORM
+from app.database.mappers.officer_mapper import OfficerMapper
 from app.common.queries.officer_query import OfficerAssignmentQueryOptions
 
 
-class OfficerRepository:
-    """
-    Repository responsible for Officer Master profiles and transactional Officer Assignments.
-    """
+from app.database.db_list import DBList
 
-    _officers: list[OfficerMaster] = []
+
+class OfficerRepository:
+    _officers = DBList(EmployeeORM)
     _assignments: list[OfficerAssignment] = []
 
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory officer store.
-        """
-        if cls._officers or cls._assignments:
-            return
-        app_logger.info("Officer repository initialized.")
-
-    # ----------------------------------------------------------
-    # Officer Master Operations
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            emp = db.get(EmployeeORM, 1)
+            if not emp:
+                default_emp = EmployeeORM(
+                    employeeid=1,
+                    districtid=1,
+                    unitid=1,
+                    rankid=1,
+                    designationid=1,
+                    kgid="EMP001",
+                    firstname="Default IO",
+                )
+                db.add(default_emp)
+                db.commit()
+            app_logger.info("OfficerRepository (SQLAlchemy) initialized.")
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed initializing OfficerRepository: %s", e)
+        finally:
+            db.close()
 
     @classmethod
     def create_officer(cls, officer: OfficerMaster) -> OfficerMaster:
-        """
-        Store an OfficerMaster profile.
-        """
-        now = datetime.now()
-        stored = officer.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-        cls._officers.append(stored)
-        app_logger.info("Officer stored | ID=%s | Badge=%s", stored.officer_id, stored.badge_number)
-        return stored
+        db = SessionLocal()
+        try:
+            orm_obj = OfficerMapper.to_orm(officer)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            res = OfficerMapper.to_domain(orm_obj)
+            app_logger.info("Officer stored in DB | ID=%s", res.officer_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create officer: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_officer_by_id(cls, officer_id: str) -> Optional[OfficerMaster]:
-        """
-        Get officer profile by ID.
-        """
-        return next((o for o in cls._officers if o.officer_id == officer_id), None)
+        db = SessionLocal()
+        try:
+            parsed_id = OfficerMapper._parse_id(officer_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(EmployeeORM, parsed_id)
+            if not orm_obj:
+                return None
+            return OfficerMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_officer_by_badge(cls, badge_number: str) -> Optional[OfficerMaster]:
-        """
-        Get officer profile by badge number.
-        """
-        return next((o for o in cls._officers if o.badge_number.lower() == badge_number.lower()), None)
+        db = SessionLocal()
+        try:
+            stmt = select(EmployeeORM).where(EmployeeORM.kgid.ilike(badge_number))
+            orm_obj = db.scalar(stmt)
+            if not orm_obj:
+                return None
+            return OfficerMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def list_officers(cls) -> list[OfficerMaster]:
-        """
-        List all officer master profiles.
-        """
-        return list(cls._officers)
+        db = SessionLocal()
+        try:
+            stmt = select(EmployeeORM)
+            orm_list = db.scalars(stmt).all()
+            return [OfficerMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
-    # ----------------------------------------------------------
-    # Officer Assignment Operations
-    # ----------------------------------------------------------
-
+    # Officer Assignments (In-memory / Transients)
     @classmethod
     def create_assignment(cls, assignment: OfficerAssignment) -> OfficerAssignment:
-        """
-        Store an OfficerAssignment record.
-        """
-        now = datetime.now()
-        stored = assignment.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-        cls._assignments.append(stored)
-        app_logger.info("Officer assignment stored | ID=%s | CaseID=%s", stored.assignment_id, stored.case_master_id)
-        return stored
+        cls._assignments.append(assignment)
+        return assignment
 
     @classmethod
     def get_assignment_by_id(cls, assignment_id: str) -> Optional[OfficerAssignment]:
-        """
-        Retrieve assignment by ID.
-        """
         return next((a for a in cls._assignments if a.assignment_id == assignment_id), None)
 
     @classmethod
     def update_assignment(cls, assignment: OfficerAssignment) -> Optional[OfficerAssignment]:
-        """
-        Update an assignment record.
-        """
-        assignment_id = assignment.assignment_id
-        for index, existing in enumerate(cls._assignments):
-            if existing.assignment_id == assignment_id:
-                updated_record = assignment.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._assignments[index] = updated_record
-                app_logger.info("Officer assignment updated | ID=%s", assignment_id)
-                return updated_record
+        for idx, a in enumerate(cls._assignments):
+            if a.assignment_id == assignment.assignment_id:
+                cls._assignments[idx] = assignment
+                return assignment
         return None
 
     @classmethod
     def delete_assignment(cls, assignment_id: str) -> bool:
-        """
-        Delete an assignment record.
-        """
-        for index, existing in enumerate(cls._assignments):
-            if existing.assignment_id == assignment_id:
-                del cls._assignments[index]
-                app_logger.info("Officer assignment deleted | ID=%s", assignment_id)
+        for idx, a in enumerate(cls._assignments):
+            if a.assignment_id == assignment_id:
+                del cls._assignments[idx]
                 return True
         return False
 
@@ -125,37 +127,8 @@ class OfficerRepository:
     def query_assignments(
         cls, options: OfficerAssignmentQueryOptions
     ) -> tuple[list[OfficerAssignment], int]:
-        """
-        Query assignments with options.
-        """
         filtered = list(cls._assignments)
-
         if options.case_master_id:
             filtered = [a for a in filtered if a.case_master_id == options.case_master_id]
-
-        if options.officer_id:
-            filtered = [a for a in filtered if a.officer_id == options.officer_id]
-
-        if options.role:
-            filtered = [a for a in filtered if a.role == options.role]
-
-        if options.is_active is not None:
-            filtered = [a for a in filtered if a.is_active == options.is_active]
-
-        total_count = len(filtered)
-
-        SORT_FIELDS = {
-            OfficerSortField.ASSIGNED_DATE: lambda a: a.assigned_date or datetime.min,
-            OfficerSortField.ROLE: lambda a: a.role.value,
-            OfficerSortField.CREATED_AT: lambda a: a.created_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda a: a.assigned_date or datetime.min)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+        total = len(filtered)
+        return filtered, total

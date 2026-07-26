@@ -298,7 +298,7 @@ export default function FIRSearchInterface() {
   // ── Filtering + sorting ───────────────────────────────────────────────
 
   const filtered = useMemo(() => {
-    let firs = MOCK_FIRS.filter((f) => {
+    const firs = MOCK_FIRS.filter((f) => {
       const q = query.toLowerCase();
       const matchQuery =
         !q ||

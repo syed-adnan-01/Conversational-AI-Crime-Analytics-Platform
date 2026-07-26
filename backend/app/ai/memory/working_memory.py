@@ -1,0 +1,1 @@
+class WorkingMemory(dict): pass

@@ -1,144 +1,129 @@
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of WitnessRepository.
+"""
 
+from typing import Optional
+from uuid import uuid4
+from sqlalchemy import select, func
 from app.core.logging import app_logger
 from app.models.witness import Witness
-from app.schemas.witness import WitnessSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.witness import WitnessORM
+from app.database.mappers.witness_mapper import WitnessMapper
 from app.common.queries.witness_query import WitnessQueryOptions
 
 
+from app.database.db_list import DBList
+
+
 class WitnessRepository:
-    """
-    Repository responsible for Witness data access operations.
-    In-memory collection for development phase.
-    """
-
-    _witnesses: list[Witness] = []
-
+    _witnesses = DBList(WitnessORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory witness store.
-        """
-        if cls._witnesses:
-            return
-        app_logger.info("Witness repository initialized.")
+        app_logger.info("WitnessRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_witness(cls, witness: Witness) -> Witness:
-        """
-        Store a Witness object in the repository.
-        Assigns audit timestamps before storage.
-        """
-        now = datetime.now()
-        stored = witness.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-        cls._witnesses.append(stored)
-
-        app_logger.info(
-            "Witness stored | ID=%s | CaseID=%s | Name=%s",
-            stored.witness_id,
-            stored.case_master_id,
-            stored.name,
-        )
-
-        return stored
+        db = SessionLocal()
+        try:
+            if not witness.witness_id:
+                witness = witness.model_copy(update={"witness_id": f"WIT-{uuid4().hex[:12].upper()}"})
+            orm_obj = WitnessMapper.to_orm(witness)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            res = WitnessMapper.to_domain(orm_obj)
+            app_logger.info("Witness stored in DB | ID=%s", res.witness_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create witness: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_witness_by_id(cls, witness_id: str) -> Optional[Witness]:
-        """
-        Retrieve a single witness by ID.
-        """
-        return next((w for w in cls._witnesses if w.witness_id == witness_id), None)
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(WitnessORM, witness_id)
+            if not orm_obj:
+                return None
+            return WitnessMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_witnesses_by_case_id(cls, case_master_id: str) -> list[Witness]:
-        """
-        Retrieve all witnesses associated with a specific case.
-        """
-        return [w for w in cls._witnesses if w.case_master_id == case_master_id]
+        db = SessionLocal()
+        try:
+            stmt = select(WitnessORM).where(WitnessORM.case_master_id == case_master_id)
+            orm_list = db.scalars(stmt).all()
+            return [WitnessMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_witness(cls, witness: Witness) -> Optional[Witness]:
-        """
-        Update a stored witness record.
-        """
-        witness_id = witness.witness_id
-        for index, existing in enumerate(cls._witnesses):
-            if existing.witness_id == witness_id:
-                updated_record = witness.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._witnesses[index] = updated_record
-                app_logger.info("Witness updated | ID=%s", witness_id)
-                return updated_record
-
-        return None
+        db = SessionLocal()
+        try:
+            if not witness.witness_id:
+                return None
+            orm_obj = db.get(WitnessORM, witness.witness_id)
+            if not orm_obj:
+                return None
+            new_orm = WitnessMapper.to_orm(witness)
+            orm_obj.witness_name = new_orm.witness_name
+            orm_obj.statement_summary = new_orm.statement_summary
+            orm_obj.contact_number = new_orm.contact_number
+            orm_obj.witness_type = new_orm.witness_type
+            db.commit()
+            db.refresh(orm_obj)
+            return WitnessMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to update witness: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_witness(cls, witness_id: str) -> bool:
-        """
-        Delete a witness record by ID.
-        """
-        for index, existing in enumerate(cls._witnesses):
-            if existing.witness_id == witness_id:
-                del cls._witnesses[index]
-                app_logger.info("Witness deleted | ID=%s", witness_id)
-                return True
-
-        return False
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(WitnessORM, witness_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to delete witness: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
     def query_witnesses(
         cls, options: WitnessQueryOptions
     ) -> tuple[list[Witness], int]:
-        """
-        Query witnesses with filtering, sorting, and pagination.
-        """
-        filtered = list(cls._witnesses)
+        db = SessionLocal()
+        try:
+            stmt = select(WitnessORM)
+            if options.case_master_id:
+                stmt = stmt.where(WitnessORM.case_master_id == options.case_master_id)
+            if options.name:
+                stmt = stmt.where(WitnessORM.witness_name.ilike(f"%{options.name}%"))
 
-        if options.case_master_id:
-            filtered = [w for w in filtered if w.case_master_id == options.case_master_id]
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = db.scalar(count_stmt) or 0
 
-        if options.gender:
-            filtered = [w for w in filtered if w.gender == options.gender]
+            page = options.page or 1
+            size = options.page_size or 10
+            stmt = stmt.offset((page - 1) * size).limit(size)
 
-        if options.is_hostile is not None:
-            filtered = [w for w in filtered if w.is_hostile == options.is_hostile]
-
-        if options.id_type:
-            filtered = [w for w in filtered if w.id_type == options.id_type]
-
-        if options.name:
-            search_name = options.name.lower()
-            filtered = [w for w in filtered if search_name in w.name.lower()]
-
-        if options.mobile_no:
-            search_mobile = options.mobile_no
-            filtered = [w for w in filtered if w.mobile_no and search_mobile in w.mobile_no]
-
-        total_count = len(filtered)
-
-        SORT_FIELDS = {
-            WitnessSortField.NAME: lambda w: w.name.lower(),
-            WitnessSortField.AGE: lambda w: w.age or 0,
-            WitnessSortField.STATEMENT_DATE: lambda w: w.statement_date or datetime.min,
-            WitnessSortField.CREATED_AT: lambda w: w.created_at or datetime.min,
-            WitnessSortField.UPDATED_AT: lambda w: w.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda w: w.created_at or datetime.min)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            orm_list = db.scalars(stmt).all()
+            return [WitnessMapper.to_domain(o) for o in orm_list], total
+        finally:
+            db.close()

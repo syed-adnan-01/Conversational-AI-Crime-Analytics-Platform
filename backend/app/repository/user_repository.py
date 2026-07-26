@@ -1,72 +1,106 @@
-from copy import deepcopy
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of UserRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, delete
 from app.core.password import PasswordManager
 from app.models.user import User
+from app.database.session import SessionLocal
+from app.database.orm.user import UserORM
+from app.database.mappers.user_mapper import UserMapper
 from app.repository.seed_users import SEED_USERS
+from app.database.db_list import DBList
 
 
 class UserRepository:
-    """
-    Repository responsible for retrieving user data.
-
-    During development, user data is loaded from SEED_USERS.
-    Passwords are automatically hashed once during initialization
-    so that authentication behaves like a production system.
-    """
-
-    # Internal in-memory user store
-    _users = []
+    _users = DBList(UserORM)
 
     @classmethod
     def initialize(cls) -> None:
         """
-        Initialize the in-memory user store by hashing
-        all seed passwords.
+        Seed / update initial users in PostgreSQL with hashed passwords.
+        Remove temporary test users (EMP004, EMP005, etc.) so test lifespans start clean.
         """
+        db = SessionLocal()
+        try:
+            # Clean up test dynamic users so test lifespans start fresh
+            db.execute(delete(UserORM).where(UserORM.employee_id.notin_(["EMP001", "EMP002", "EMP003"])))
 
-        if cls._users:
-            return
-
-        for user in SEED_USERS:
-            print("Before hashing:", repr(user["password"]))
-            print("Length:", len(user["password"]))
-
-            user_copy = deepcopy(user)
-
-            user_copy["password"] = PasswordManager.hash_password(
-                user["password"]
-            )
-
-            print("After hashing:", user_copy["password"])
-
-            cls._users.append(user_copy)
+            for seed in SEED_USERS:
+                stmt = select(UserORM).where(UserORM.employee_id == seed["employee_id"])
+                existing = db.scalar(stmt)
+                hashed = PasswordManager.hash_password(seed["password"])
+                user_domain = User(
+                    user_id=seed["employee_id"],
+                    employee_id=seed["employee_id"],
+                    name=seed["name"],
+                    email=seed["email"],
+                    department=seed["department"],
+                    role=seed["role"],
+                    is_active=seed["is_active"],
+                )
+                if not existing:
+                    orm_obj = UserMapper.to_orm(user_domain, hashed_password=hashed)
+                    db.add(orm_obj)
+                else:
+                    existing.hashed_password = hashed
+                    existing.full_name = seed["name"]
+                    existing.role = seed["role"].value if hasattr(seed["role"], "value") else str(seed["role"])
+                UserMapper.register_department(seed["employee_id"], seed["department"])
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
 
     @classmethod
     def get_by_employee_id(cls, employee_id: str) -> Optional[dict]:
-        """
-        Retrieve a user by employee ID.
-        """
-
-
-        return next(
-            (
-                user
-                for user in cls._users
-                if user["employee_id"] == employee_id
-            ),
-            None,
-        )
+        db = SessionLocal()
+        try:
+            stmt = select(UserORM).where(UserORM.employee_id == employee_id)
+            orm_obj = db.scalar(stmt)
+            if not orm_obj:
+                return None
+            user_domain = UserMapper.to_domain(orm_obj)
+            res = user_domain.model_dump()
+            res["password"] = orm_obj.hashed_password
+            return res
+        finally:
+            db.close()
 
     @classmethod
     def get_user(cls, employee_id: str) -> Optional[User]:
-        """
-        Retrieve a User model by employee ID.
-        """
+        db = SessionLocal()
+        try:
+            stmt = select(UserORM).where(UserORM.employee_id == employee_id)
+            orm_obj = db.scalar(stmt)
+            if not orm_obj:
+                return None
+            return UserMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
-        user_data = cls.get_by_employee_id(employee_id)
+    @classmethod
+    def list_users(cls) -> list[User]:
+        """Additive read-only query for application administration APIs."""
+        db = SessionLocal()
+        try:
+            return [UserMapper.to_domain(item) for item in db.scalars(select(UserORM)).all()]
+        finally:
+            db.close()
 
-        if user_data is None:
-            return None
-
-        return User(**user_data)
+    @classmethod
+    def save_user(cls, user: User, password: str = "") -> User:
+        db = SessionLocal()
+        try:
+            hashed = PasswordManager.hash_password(password) if password else ""
+            orm_obj = UserMapper.to_orm(user, hashed_password=hashed)
+            db.merge(orm_obj)
+            db.commit()
+            return UserMapper.to_domain(orm_obj)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()

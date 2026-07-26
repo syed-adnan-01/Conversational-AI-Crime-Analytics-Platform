@@ -1,0 +1,2 @@
+def score(output, expected):
+    required = expected.get('required_fields', []); value = output.get('response', output); return {'latency_ms': float(output.get('latency_ms', 0)), 'cost': float(output.get('cost', 0)), 'structured_output_validity': float(all(field in value for field in required)) if isinstance(value, dict) else 0.0, 'json_compliance': float(isinstance(value, dict)), 'response_completeness': float(bool(value))}

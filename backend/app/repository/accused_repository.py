@@ -1,220 +1,148 @@
-from copy import deepcopy
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of AccusedRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, func
 from app.core.logging import app_logger
 from app.models.accused import Accused
-from app.schemas.accused import AccusedSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.accused import AccusedORM
+from app.database.mappers.accused_mapper import AccusedMapper
 from app.common.queries.accused_query import AccusedQueryOptions
 
 
+from app.database.db_list import DBList
+
+
 class AccusedRepository:
-    """
-    Repository responsible for accused data access operations.
-
-    During development, accused are stored in an in-memory collection.
-    The interface decouples Service/API layers from physical storage.
-    """
-
-    _accused: list[Accused] = []
-
-    # ----------------------------------------------------------
-    # Initialization
-    # ----------------------------------------------------------
-
+    _accused = DBList(AccusedORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory accused store.
-        """
-        if cls._accused:
-            return
-
-        app_logger.info("Accused repository initialized.")
-
-    # ----------------------------------------------------------
-    # Create
-    # ----------------------------------------------------------
+        app_logger.info("AccusedRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_accused(cls, accused: Accused) -> Accused:
-        """
-        Store an Accused object in the repository.
-        Assigns audit timestamps before storage.
-        Note: The ID is generated in the Service layer, not here.
-        """
-        now = datetime.now()
-        stored = accused.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-        cls._accused.append(stored)
-
-        app_logger.info(
-            "Accused stored | ID=%s | CaseMasterID=%s | Name=%s",
-            stored.accused_id,
-            stored.case_master_id,
-            stored.name,
-        )
-
-        return stored
-
-    # ----------------------------------------------------------
-    # Retrieve — By ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = AccusedMapper.to_orm(accused)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            AccusedMapper.cache_domain(accused, db_id=orm_obj.accusedmasterid)
+            res = AccusedMapper.to_domain(orm_obj)
+            app_logger.info("Accused stored in DB | ID=%s", res.accused_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create accused: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_accused_by_id(cls, accused_id: str) -> Optional[Accused]:
-        """
-        Retrieve a single accused by its ID.
-        """
-        return next(
-            (a for a in cls._accused if a.accused_id == accused_id),
-            None,
-        )
-
-    # ----------------------------------------------------------
-    # Retrieve — By Case Master ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = AccusedMapper._parse_id(accused_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(AccusedORM, parsed_id)
+            if not orm_obj:
+                return None
+            return AccusedMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_accused_by_case_id(cls, case_master_id: str) -> list[Accused]:
-        """
-        Retrieve all accused associated with a specific case.
-        """
-        return [a for a in cls._accused if a.case_master_id == case_master_id]
-
-    # ----------------------------------------------------------
-    # Update
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_case_id = AccusedMapper._parse_case_id(case_master_id)
+            stmt = select(AccusedORM).where(AccusedORM.casemasterid == parsed_case_id)
+            orm_list = db.scalars(stmt).all()
+            return [AccusedMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_accused(cls, accused: Accused) -> Optional[Accused]:
-        """
-        Replace a stored accused with the provided object.
-        Performs a full replacement, updating updated_at timestamp.
-        """
-        accused_id = accused.accused_id
-        for index, existing in enumerate(cls._accused):
-            if existing.accused_id == accused_id:
-                updated_record = accused.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._accused[index] = updated_record
-                app_logger.info("Accused updated | ID=%s", accused_id)
-                return updated_record
-
-        return None
-
-    # ----------------------------------------------------------
-    # Delete
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = AccusedMapper._parse_id(accused.accused_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(AccusedORM, parsed_id)
+            if not orm_obj:
+                return None
+            new_orm = AccusedMapper.to_orm(accused)
+            orm_obj.accusedname = new_orm.accusedname
+            orm_obj.ageyear = new_orm.ageyear
+            orm_obj.genderid = new_orm.genderid
+            orm_obj.personid = new_orm.personid
+            db.commit()
+            db.refresh(orm_obj)
+            return AccusedMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to update accused: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_accused(cls, accused_id: str) -> bool:
-        """
-        Delete an accused by its ID.
-        """
-        for index, existing in enumerate(cls._accused):
-            if existing.accused_id == accused_id:
-                del cls._accused[index]
-                app_logger.info("Accused deleted | ID=%s", accused_id)
-                return True
-
-        return False
-
-    # ----------------------------------------------------------
-    # Query & Search
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = AccusedMapper._parse_id(accused_id)
+            if parsed_id is None:
+                return False
+            orm_obj = db.get(AccusedORM, parsed_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to delete accused: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
     def query_accused(
         cls, options: AccusedQueryOptions
     ) -> tuple[list[Accused], int]:
-        """
-        Query accused with filtering, keyword search, sorting, and pagination.
-        Returns a tuple of (items_subset, total_count).
-        """
-        filtered = list(cls._accused)
+        db = SessionLocal()
+        try:
+            stmt = select(AccusedORM)
+            if options.case_master_id:
+                parsed_case_id = AccusedMapper._parse_case_id(options.case_master_id)
+                stmt = stmt.where(AccusedORM.casemasterid == parsed_case_id)
+            if options.name:
+                stmt = stmt.where(AccusedORM.accusedname.ilike(f"%{options.name}%"))
 
-        # 1. Filtering
-        if options.case_master_id:
-            filtered = [
-                a for a in filtered if a.case_master_id == options.case_master_id
-            ]
+            if hasattr(options, "sort_by") and options.sort_by:
+                sort_col = AccusedORM.accusedname
+                if str(options.sort_by).lower().endswith("name"):
+                    sort_col = AccusedORM.accusedname
+                elif str(options.sort_by).lower().endswith("age"):
+                    sort_col = AccusedORM.ageyear
 
-        if options.gender:
-            filtered = [a for a in filtered if a.gender == options.gender]
+                if hasattr(options, "sort_order") and str(options.sort_order).lower().endswith("desc"):
+                    stmt = stmt.order_by(sort_col.desc())
+                else:
+                    stmt = stmt.order_by(sort_col.asc())
 
-        if options.age is not None:
-            filtered = [a for a in filtered if a.age == options.age]
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = db.scalar(count_stmt) or 0
 
-        if options.nationality:
-            filtered = [
-                a
-                for a in filtered
-                if a.nationality and a.nationality.lower() == options.nationality.lower()
-            ]
+            page = options.page or 1
+            size = options.page_size or 10
+            stmt = stmt.offset((page - 1) * size).limit(size)
 
-        if options.occupation:
-            filtered = [
-                a
-                for a in filtered
-                if a.occupation and a.occupation.lower() == options.occupation.lower()
-            ]
-
-        if options.id_type:
-            filtered = [a for a in filtered if a.id_type == options.id_type]
-
-        # 2. Case-Insensitive Keyword Searches
-        if options.name:
-            search_term = options.name.lower()
-            filtered = [a for a in filtered if search_term in a.name.lower()]
-
-        if options.mobile_no:
-            filtered = [
-                a
-                for a in filtered
-                if a.mobile_no and options.mobile_no in a.mobile_no
-            ]
-
-        if options.email:
-            search_email = options.email.lower()
-            filtered = [
-                a
-                for a in filtered
-                if a.email and search_email in a.email.lower()
-            ]
-
-        if options.id_number:
-            search_id = options.id_number.lower()
-            filtered = [
-                a
-                for a in filtered
-                if a.id_number and search_id in a.id_number.lower()
-            ]
-
-        total_count = len(filtered)
-
-        # 3. Sorting
-        SORT_FIELDS = {
-            AccusedSortField.NAME: lambda a: a.name.lower(),
-            AccusedSortField.AGE: lambda a: a.age or 0,
-            AccusedSortField.CREATED_DATE: lambda a: a.created_at or datetime.min,
-            AccusedSortField.UPDATED_DATE: lambda a: a.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda a: a.created_at)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        # 4. Pagination
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            orm_list = db.scalars(stmt).all()
+            return [AccusedMapper.to_domain(o) for o in orm_list], total
+        finally:
+            db.close()

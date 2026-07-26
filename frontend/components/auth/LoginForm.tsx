@@ -22,19 +22,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { authErrorMessage, useAuth } from "@/components/auth/AuthProvider";
 
 // ─── Static data ─────────────────────────────────────────────────────────────
 
 const DEPARTMENTS = [
-  { value: "cyber-crime", label: "Cyber Crime Division" },
-  { value: "homicide", label: "Homicide Investigation Unit" },
-  { value: "narcotics", label: "Narcotics Control Bureau" },
-  { value: "anti-terrorism", label: "Anti-Terrorism Squad" },
-  { value: "financial-crime", label: "Financial Crime Unit" },
-  { value: "organized-crime", label: "Organized Crime Cell" },
-  { value: "special-branch", label: "Special Branch" },
-  { value: "state-police", label: "State Police Headquarters" },
-  { value: "central-bureau", label: "Central Bureau of Investigation" },
+  { value: "Cyber Crime", label: "Cyber Crime" },
+  { value: "Crime Analytics", label: "Crime Analytics" },
+  { value: "Investigation", label: "Investigation" },
 ];
 
 const LIVE_STATS = [
@@ -79,13 +74,14 @@ const STATUS_INDICATORS = [
 ];
 
 // Demo credentials hint
-const DEMO_ID = "IPS-2024-0042";
-const DEMO_PASS = "admin@123";
+const DEMO_ID = "EMP001";
+const DEMO_PASS = "password123";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function LoginForm() {
   const router = useRouter();
+  const { login } = useAuth();
 
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
@@ -128,21 +124,21 @@ export default function LoginForm() {
 
     setIsLoading(true);
 
-    // Simulate multi-step auth
-    const steps = [
-      "Verifying credentials…",
-      "Checking clearance level…",
-      "Establishing secure channel…",
-      "Loading intelligence data…",
-    ];
-
-    for (let i = 0; i < steps.length; i++) {
-      setLoadingStep(i);
-      await new Promise((r) => setTimeout(r, 500));
+    // Reflect the real authentication lifecycle while the request is in flight.
+    try {
+      setLoadingStep(0);
+      await login({
+        employee_id: employeeId.trim(),
+        password,
+        department,
+      });
+      setLoadingStep(3);
+      router.push("/dashboard");
+    } catch (submissionError) {
+      setError(authErrorMessage(submissionError));
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
-    router.push("/dashboard");
   };
 
   return (

@@ -1,145 +1,146 @@
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of ArrestRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, func
 from app.core.logging import app_logger
-from app.models.arrest import Arrest, ArrestStatus
-from app.schemas.arrest import ArrestSortField
-from app.common.enums import SortOrder
+from app.models.arrest import Arrest
+from app.database.session import SessionLocal
+from app.database.orm.arrest import ArrestSurrenderORM
+from app.database.mappers.arrest_mapper import ArrestMapper
 from app.common.queries.arrest_query import ArrestQueryOptions
 
 
+from app.database.db_list import DBList
+
+
 class ArrestRepository:
-    """
-    Repository responsible for Arrest data access operations.
-    """
-
-    _arrests: list[Arrest] = []
-
+    _arrests = DBList(ArrestSurrenderORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory arrest store.
-        """
-        if cls._arrests:
-            return
-        app_logger.info("Arrest repository initialized.")
+        app_logger.info("ArrestRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_arrest(cls, arrest: Arrest) -> Arrest:
-        """
-        Store an Arrest object in the repository.
-        """
-        now = datetime.now()
-        stored = arrest.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-        cls._arrests.append(stored)
-
-        app_logger.info(
-            "Arrest stored | ID=%s | CaseID=%s | AccusedID=%s",
-            stored.arrest_id,
-            stored.case_master_id,
-            stored.accused_id,
-        )
-
-        return stored
+        db = SessionLocal()
+        try:
+            orm_obj = ArrestMapper.to_orm(arrest)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            ArrestMapper.cache_domain(arrest, db_id=orm_obj.arrestsurrenderid)
+            res = ArrestMapper.to_domain(orm_obj)
+            app_logger.info("Arrest stored in DB | ID=%s", res.arrest_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create arrest: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_arrest_by_id(cls, arrest_id: str) -> Optional[Arrest]:
-        """
-        Retrieve a single arrest by ID.
-        """
-        return next((a for a in cls._arrests if a.arrest_id == arrest_id), None)
+        db = SessionLocal()
+        try:
+            parsed_id = ArrestMapper._parse_id(arrest_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(ArrestSurrenderORM, parsed_id)
+            if not orm_obj:
+                return None
+            return ArrestMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_arrests_by_case_id(cls, case_master_id: str) -> list[Arrest]:
-        """
-        Retrieve all arrests associated with a specific case.
-        """
-        return [a for a in cls._arrests if a.case_master_id == case_master_id]
+        db = SessionLocal()
+        try:
+            parsed_case_id = ArrestMapper._parse_case_id(case_master_id)
+            stmt = select(ArrestSurrenderORM).where(ArrestSurrenderORM.casemasterid == parsed_case_id)
+            orm_list = db.scalars(stmt).all()
+            return [ArrestMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def get_arrests_by_accused_id(cls, accused_id: str) -> list[Arrest]:
-        """
-        Retrieve all arrests for a specific accused.
-        """
-        return [a for a in cls._arrests if a.accused_id == accused_id]
+        db = SessionLocal()
+        try:
+            parsed_accused_id = ArrestMapper._parse_accused_id(accused_id)
+            stmt = select(ArrestSurrenderORM).where(ArrestSurrenderORM.accusedmasterid == parsed_accused_id)
+            orm_list = db.scalars(stmt).all()
+            return [ArrestMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_arrest(cls, arrest: Arrest) -> Optional[Arrest]:
-        """
-        Update a stored arrest record.
-        """
-        arrest_id = arrest.arrest_id
-        for index, existing in enumerate(cls._arrests):
-            if existing.arrest_id == arrest_id:
-                updated_record = arrest.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._arrests[index] = updated_record
-                app_logger.info("Arrest updated | ID=%s", arrest_id)
-                return updated_record
-
-        return None
+        db = SessionLocal()
+        try:
+            parsed_id = ArrestMapper._parse_id(arrest.arrest_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(ArrestSurrenderORM, parsed_id)
+            if not orm_obj:
+                return None
+            new_orm = ArrestMapper.to_orm(arrest)
+            orm_obj.arrestsurrenderdate = new_orm.arrestsurrenderdate
+            db.commit()
+            db.refresh(orm_obj)
+            ArrestMapper.cache_domain(arrest, db_id=orm_obj.arrestsurrenderid)
+            return ArrestMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to update arrest: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_arrest(cls, arrest_id: str) -> bool:
-        """
-        Delete an arrest record by ID.
-        """
-        for index, existing in enumerate(cls._arrests):
-            if existing.arrest_id == arrest_id:
-                del cls._arrests[index]
-                app_logger.info("Arrest deleted | ID=%s", arrest_id)
-                return True
-
-        return False
+        db = SessionLocal()
+        try:
+            parsed_id = ArrestMapper._parse_id(arrest_id)
+            if parsed_id is None:
+                return False
+            orm_obj = db.get(ArrestSurrenderORM, parsed_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to delete arrest: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
     def query_arrests(
         cls, options: ArrestQueryOptions
     ) -> tuple[list[Arrest], int]:
-        """
-        Query arrests with filtering, sorting, and pagination.
-        """
-        filtered = list(cls._arrests)
+        db = SessionLocal()
+        try:
+            stmt = select(ArrestSurrenderORM)
+            if options.case_master_id:
+                parsed_case_id = ArrestMapper._parse_case_id(options.case_master_id)
+                stmt = stmt.where(ArrestSurrenderORM.casemasterid == parsed_case_id)
+            if options.accused_id:
+                parsed_accused_id = ArrestMapper._parse_accused_id(options.accused_id)
+                stmt = stmt.where(ArrestSurrenderORM.accusedmasterid == parsed_accused_id)
 
-        if options.case_master_id:
-            filtered = [a for a in filtered if a.case_master_id == options.case_master_id]
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = db.scalar(count_stmt) or 0
 
-        if options.accused_id:
-            filtered = [a for a in filtered if a.accused_id == options.accused_id]
+            page = options.page or 1
+            size = options.page_size or 10
+            stmt = stmt.offset((page - 1) * size).limit(size)
 
-        if options.status:
-            filtered = [a for a in filtered if a.status == options.status]
-
-        if options.arresting_officer:
-            search_officer = options.arresting_officer.lower()
-            filtered = [a for a in filtered if search_officer in a.arresting_officer.lower()]
-
-        if options.arrest_location:
-            search_loc = options.arrest_location.lower()
-            filtered = [a for a in filtered if search_loc in a.arrest_location.lower()]
-
-        total_count = len(filtered)
-
-        SORT_FIELDS = {
-            ArrestSortField.ARREST_DATE: lambda a: a.arrest_date or datetime.min,
-            ArrestSortField.STATUS: lambda a: a.status.value,
-            ArrestSortField.CREATED_AT: lambda a: a.created_at or datetime.min,
-            ArrestSortField.UPDATED_AT: lambda a: a.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda a: a.arrest_date or datetime.min)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            orm_list = db.scalars(stmt).all()
+            return [ArrestMapper.to_domain(o) for o in orm_list], total
+        finally:
+            db.close()

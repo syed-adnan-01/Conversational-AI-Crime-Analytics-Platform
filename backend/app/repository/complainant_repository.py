@@ -1,186 +1,148 @@
-from copy import deepcopy
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of ComplainantRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, func
 from app.core.logging import complainant_logger
 from app.models.complainant import Complainant
-from app.schemas.complainant import ComplainantSortField, SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.complainant import ComplainantDetailsORM
+from app.database.mappers.complainant_mapper import ComplainantMapper
 from app.common.queries.complainant_query import ComplainantQueryOptions
 
 
+from app.database.db_list import DBList
+
+
 class ComplainantRepository:
-    """
-    Repository responsible for complainant data access operations.
-
-    During development, complainants are stored in an in-memory collection.
-    The interface decouples Service/API layers from physical storage.
-    """
-
-    _complainants: list[Complainant] = []
-
-    # ----------------------------------------------------------
-    # Initialization
-    # ----------------------------------------------------------
-
+    _complainants = DBList(ComplainantDetailsORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory complainant store.
-        """
-        if cls._complainants:
-            return
-
-        complainant_logger.info("Complainant repository initialized.")
-
-    # ----------------------------------------------------------
-    # Create
-    # ----------------------------------------------------------
+        complainant_logger.info("ComplainantRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_complainant(cls, complainant: Complainant) -> Complainant:
-        """
-        Store a Complainant object in the repository.
-        Assigns audit timestamps before storage.
-        Note: The ID is generated in the Service layer, not here.
-        """
-        now = datetime.now()
-        stored = complainant.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-        cls._complainants.append(stored)
-
-        complainant_logger.info(
-            "Complainant stored | ID=%s | CaseMasterID=%s | Name=%s",
-            stored.complainant_id,
-            stored.case_master_id,
-            stored.name,
-        )
-
-        return stored
-
-    # ----------------------------------------------------------
-    # Retrieve — By ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = ComplainantMapper.to_orm(complainant)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            ComplainantMapper.cache_domain(complainant, db_id=orm_obj.complainantid)
+            res = ComplainantMapper.to_domain(orm_obj)
+            complainant_logger.info("Complainant stored in DB | ID=%s", res.complainant_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            complainant_logger.error("Failed to create complainant: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_complainant_by_id(cls, complainant_id: str) -> Optional[Complainant]:
-        """
-        Retrieve a single complainant by its ID.
-        """
-        return next(
-            (c for c in cls._complainants if c.complainant_id == complainant_id),
-            None,
-        )
-
-    # ----------------------------------------------------------
-    # Retrieve — By Case Master ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = ComplainantMapper._parse_id(complainant_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(ComplainantDetailsORM, parsed_id)
+            if not orm_obj:
+                return None
+            return ComplainantMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_complainants_by_case_id(cls, case_master_id: str) -> list[Complainant]:
-        """
-        Retrieve all complainants associated with a specific case.
-        """
-        return [c for c in cls._complainants if c.case_master_id == case_master_id]
-
-    # ----------------------------------------------------------
-    # Update
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_case_id = ComplainantMapper._parse_case_id(case_master_id)
+            stmt = select(ComplainantDetailsORM).where(ComplainantDetailsORM.casemasterid == parsed_case_id)
+            orm_list = db.scalars(stmt).all()
+            return [ComplainantMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_complainant(cls, complainant: Complainant) -> Optional[Complainant]:
-        """
-        Replace a stored complainant with the provided object.
-        Performs a full replacement, updating updated_at timestamp.
-        """
-        complainant_id = complainant.complainant_id
-        for index, existing in enumerate(cls._complainants):
-            if existing.complainant_id == complainant_id:
-                updated_record = complainant.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._complainants[index] = updated_record
-                complainant_logger.info("Complainant updated | ID=%s", complainant_id)
-                return updated_record
-
-        return None
-
-    # ----------------------------------------------------------
-    # Delete
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = ComplainantMapper._parse_id(complainant.complainant_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(ComplainantDetailsORM, parsed_id)
+            if not orm_obj:
+                return None
+            new_orm = ComplainantMapper.to_orm(complainant)
+            orm_obj.complainantname = new_orm.complainantname
+            orm_obj.ageyear = new_orm.ageyear
+            orm_obj.genderid = new_orm.genderid
+            db.commit()
+            db.refresh(orm_obj)
+            ComplainantMapper.cache_domain(complainant, db_id=orm_obj.complainantid)
+            return ComplainantMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            complainant_logger.error("Failed to update complainant: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_complainant(cls, complainant_id: str) -> bool:
-        """
-        Delete a complainant by its ID.
-        """
-        for index, existing in enumerate(cls._complainants):
-            if existing.complainant_id == complainant_id:
-                del cls._complainants[index]
-                complainant_logger.info("Complainant deleted | ID=%s", complainant_id)
-                return True
-
-        return False
-
-    # ----------------------------------------------------------
-    # Query & Search
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = ComplainantMapper._parse_id(complainant_id)
+            if parsed_id is None:
+                return False
+            orm_obj = db.get(ComplainantDetailsORM, parsed_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            complainant_logger.error("Failed to delete complainant: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
     def query_complainants(
         cls, options: ComplainantQueryOptions
     ) -> tuple[list[Complainant], int]:
-        """
-        Query complainants with filtering, keyword search, sorting, and pagination.
-        Returns a tuple of (items_subset, total_count).
-        """
-        filtered = list(cls._complainants)
+        db = SessionLocal()
+        try:
+            stmt = select(ComplainantDetailsORM)
+            if options.case_master_id:
+                parsed_case_id = ComplainantMapper._parse_case_id(options.case_master_id)
+                stmt = stmt.where(ComplainantDetailsORM.casemasterid == parsed_case_id)
+            if options.name:
+                stmt = stmt.where(ComplainantDetailsORM.complainantname.ilike(f"%{options.name}%"))
 
-        # 1. Filtering
-        if options.case_master_id:
-            filtered = [
-                c for c in filtered if c.case_master_id == options.case_master_id
-            ]
+            if hasattr(options, "sort_by") and options.sort_by:
+                sort_col = ComplainantDetailsORM.complainantname
+                if str(options.sort_by).lower().endswith("name"):
+                    sort_col = ComplainantDetailsORM.complainantname
+                elif str(options.sort_by).lower().endswith("age"):
+                    sort_col = ComplainantDetailsORM.ageyear
 
-        if options.gender:
-            filtered = [c for c in filtered if c.gender == options.gender]
+                if hasattr(options, "sort_order") and str(options.sort_order).lower().endswith("desc"):
+                    stmt = stmt.order_by(sort_col.desc())
+                else:
+                    stmt = stmt.order_by(sort_col.asc())
 
-        if options.mobile_no:
-            filtered = [c for c in filtered if c.mobile_no == options.mobile_no]
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = db.scalar(count_stmt) or 0
 
-        if options.email:
-            filtered = [
-                c
-                for c in filtered
-                if c.email and c.email.lower() == options.email.lower()
-            ]
+            page = options.page or 1
+            size = options.page_size or 10
+            stmt = stmt.offset((page - 1) * size).limit(size)
 
-        # 2. Case-Insensitive Keyword Search on Name
-        if options.name:
-            search_term = options.name.lower()
-            filtered = [c for c in filtered if search_term in c.name.lower()]
-
-        total_count = len(filtered)
-
-        # 3. Sorting
-        SORT_FIELDS = {
-            ComplainantSortField.NAME: lambda c: c.name.lower(),
-            ComplainantSortField.AGE: lambda c: c.age or 0,
-            ComplainantSortField.CREATED_DATE: lambda c: c.created_at or datetime.min,
-            ComplainantSortField.UPDATED_DATE: lambda c: c.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda c: c.created_at)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        # 4. Pagination
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            orm_list = db.scalars(stmt).all()
+            return [ComplainantMapper.to_domain(o) for o in orm_list], total
+        finally:
+            db.close()

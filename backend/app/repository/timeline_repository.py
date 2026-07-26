@@ -1,115 +1,88 @@
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of TimelineRepository.
+"""
 
+from typing import Optional
+from uuid import uuid4
+from sqlalchemy import select, func
 from app.core.logging import app_logger
 from app.models.timeline import TimelineEvent
-from app.schemas.timeline import TimelineSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.timeline import CaseTimelineORM
+from app.database.mappers.timeline_mapper import TimelineMapper
 from app.common.queries.timeline_query import TimelineQueryOptions
 
 
+from app.database.db_list import DBList
+
+
 class TimelineRepository:
-    """
-    Append-Only Repository for investigation timeline events.
-
-    Strict Architecture Rule: This repository is strictly append-only.
-    No update or delete operations exist or are permitted.
-    """
-
-    _events: list[TimelineEvent] = []
-
+    _events = DBList(CaseTimelineORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory timeline store.
-        """
-        if cls._events:
-            return
-        app_logger.info("Timeline repository initialized.")
+        app_logger.info("TimelineRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_event(cls, event: TimelineEvent) -> TimelineEvent:
-        """
-        Append a new timeline event to the repository.
-        """
-        now = datetime.now()
-        stored = event.model_copy(
-            update={
-                "created_at": now,
-            }
-        )
-
-        cls._events.append(stored)
-
-        app_logger.info(
-            "Timeline event appended | ID=%s | CaseID=%s | Type=%s",
-            stored.event_id,
-            stored.case_master_id,
-            stored.event_type,
-        )
-
-        return stored
+        db = SessionLocal()
+        try:
+            if not event.event_id:
+                event = event.model_copy(update={"event_id": f"TL-{uuid4().hex[:12].upper()}"})
+            orm_obj = TimelineMapper.to_orm(event)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            res = TimelineMapper.to_domain(orm_obj)
+            app_logger.info("Timeline event appended in DB | ID=%s", res.event_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to append timeline event: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_event_by_id(cls, event_id: str) -> Optional[TimelineEvent]:
-        """
-        Retrieve a single event by ID.
-        """
-        return next((e for e in cls._events if e.event_id == event_id), None)
+        db = SessionLocal()
+        try:
+            orm_obj = db.get(CaseTimelineORM, event_id)
+            if not orm_obj:
+                return None
+            return TimelineMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_case_timeline(cls, case_master_id: str) -> list[TimelineEvent]:
-        """
-        Retrieve all timeline events for a given case, ordered by event_time descending.
-        """
-        case_events = [e for e in cls._events if e.case_master_id == case_master_id]
-        case_events.sort(key=lambda x: x.event_time, reverse=True)
-        return case_events
+        db = SessionLocal()
+        try:
+            stmt = select(CaseTimelineORM).where(
+                CaseTimelineORM.case_master_id == case_master_id
+            ).order_by(CaseTimelineORM.event_timestamp.desc())
+            orm_list = db.scalars(stmt).all()
+            return [TimelineMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def query_timeline(
         cls, options: TimelineQueryOptions
     ) -> tuple[list[TimelineEvent], int]:
-        """
-        Query timeline events with filtering, sorting, and pagination.
-        Returns a tuple of (items_subset, total_count).
-        """
-        filtered = list(cls._events)
+        db = SessionLocal()
+        try:
+            stmt = select(CaseTimelineORM)
+            if options.case_master_id:
+                stmt = stmt.where(CaseTimelineORM.case_master_id == options.case_master_id)
 
-        if options.case_master_id:
-            filtered = [e for e in filtered if e.case_master_id == options.case_master_id]
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = db.scalar(count_stmt) or 0
 
-        if options.event_type:
-            filtered = [e for e in filtered if e.event_type == options.event_type]
+            page = options.page or 1
+            size = options.page_size or 10
+            stmt = stmt.offset((page - 1) * size).limit(size)
 
-        if options.title:
-            search_title = options.title.lower()
-            filtered = [e for e in filtered if search_title in e.title.lower()]
-
-        if options.description:
-            search_desc = options.description.lower()
-            filtered = [e for e in filtered if search_desc in e.description.lower()]
-
-        if options.from_date:
-            filtered = [e for e in filtered if e.event_time >= options.from_date]
-
-        if options.to_date:
-            filtered = [e for e in filtered if e.event_time <= options.to_date]
-
-        total_count = len(filtered)
-
-        SORT_FIELDS = {
-            TimelineSortField.EVENT_TIME: lambda e: e.event_time,
-            TimelineSortField.EVENT_TYPE: lambda e: e.event_type.value,
-            TimelineSortField.CREATED_AT: lambda e: e.created_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda e: e.event_time)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            orm_list = db.scalars(stmt).all()
+            return [TimelineMapper.to_domain(o) for o in orm_list], total
+        finally:
+            db.close()

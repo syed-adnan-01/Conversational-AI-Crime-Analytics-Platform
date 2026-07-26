@@ -1,0 +1,1 @@
+class DecisionError(Exception): pass

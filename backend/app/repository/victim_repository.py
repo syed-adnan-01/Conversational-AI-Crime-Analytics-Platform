@@ -1,221 +1,148 @@
-from copy import deepcopy
-from datetime import datetime
-from typing import Optional
+"""
+SQLAlchemy PostgreSQL implementation of VictimRepository.
+"""
 
+from typing import Optional
+from sqlalchemy import select, func
 from app.core.logging import app_logger
 from app.models.victim import Victim
-from app.schemas.victim import VictimSortField
-from app.common.enums import SortOrder
+from app.database.session import SessionLocal
+from app.database.orm.victim import VictimORM
+from app.database.mappers.victim_mapper import VictimMapper
 from app.common.queries.victim_query import VictimQueryOptions
 
 
+from app.database.db_list import DBList
+
 
 class VictimRepository:
-    """
-    Repository responsible for victim data access operations.
-
-    During development, victims are stored in an in-memory collection.
-    The interface decouples Service/API layers from physical storage.
-    """
-
-    _victims: list[Victim] = []
-
-    # ----------------------------------------------------------
-    # Initialization
-    # ----------------------------------------------------------
-
+    _victims = DBList(VictimORM)
     @classmethod
     def initialize(cls) -> None:
-        """
-        Initialize the in-memory victim store.
-        """
-        if cls._victims:
-            return
-
-        app_logger.info("Victim repository initialized.")
-
-    # ----------------------------------------------------------
-    # Create
-    # ----------------------------------------------------------
+        app_logger.info("VictimRepository (SQLAlchemy) initialized.")
 
     @classmethod
     def create_victim(cls, victim: Victim) -> Victim:
-        """
-        Store a Victim object in the repository.
-        Assigns audit timestamps before storage.
-        Note: The ID is generated in the Service layer, not here.
-        """
-        now = datetime.now()
-        stored = victim.model_copy(
-            update={
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-
-        cls._victims.append(stored)
-
-        app_logger.info(
-            "Victim stored | ID=%s | CaseMasterID=%s | Name=%s",
-            stored.victim_id,
-            stored.case_master_id,
-            stored.name,
-        )
-
-        return stored
-
-    # ----------------------------------------------------------
-    # Retrieve — By ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            orm_obj = VictimMapper.to_orm(victim)
+            db.add(orm_obj)
+            db.commit()
+            db.refresh(orm_obj)
+            VictimMapper.cache_domain(victim, db_id=orm_obj.victimmasterid)
+            res = VictimMapper.to_domain(orm_obj)
+            app_logger.info("Victim stored in DB | ID=%s", res.victim_id)
+            return res
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to create victim: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def get_victim_by_id(cls, victim_id: str) -> Optional[Victim]:
-        """
-        Retrieve a single victim by its ID.
-        """
-        return next(
-            (v for v in cls._victims if v.victim_id == victim_id),
-            None,
-        )
-
-    # ----------------------------------------------------------
-    # Retrieve — By Case Master ID
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = VictimMapper._parse_id(victim_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(VictimORM, parsed_id)
+            if not orm_obj:
+                return None
+            return VictimMapper.to_domain(orm_obj)
+        finally:
+            db.close()
 
     @classmethod
     def get_victims_by_case_id(cls, case_master_id: str) -> list[Victim]:
-        """
-        Retrieve all victims associated with a specific case.
-        """
-        return [v for v in cls._victims if v.case_master_id == case_master_id]
-
-    # ----------------------------------------------------------
-    # Update
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_case_id = VictimMapper._parse_case_id(case_master_id)
+            stmt = select(VictimORM).where(VictimORM.casemasterid == parsed_case_id)
+            orm_list = db.scalars(stmt).all()
+            return [VictimMapper.to_domain(o) for o in orm_list]
+        finally:
+            db.close()
 
     @classmethod
     def update_victim(cls, victim: Victim) -> Optional[Victim]:
-        """
-        Replace a stored victim with the provided object.
-        Performs a full replacement, updating updated_at timestamp.
-        """
-        victim_id = victim.victim_id
-        for index, existing in enumerate(cls._victims):
-            if existing.victim_id == victim_id:
-                updated_record = victim.model_copy(
-                    update={"updated_at": datetime.now()}
-                )
-                cls._victims[index] = updated_record
-                app_logger.info("Victim updated | ID=%s", victim_id)
-                return updated_record
-
-        return None
-
-    # ----------------------------------------------------------
-    # Delete
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = VictimMapper._parse_id(victim.victim_id)
+            if parsed_id is None:
+                return None
+            orm_obj = db.get(VictimORM, parsed_id)
+            if not orm_obj:
+                return None
+            new_orm = VictimMapper.to_orm(victim)
+            orm_obj.victimname = new_orm.victimname
+            orm_obj.ageyear = new_orm.ageyear
+            orm_obj.genderid = new_orm.genderid
+            db.commit()
+            db.refresh(orm_obj)
+            VictimMapper.cache_domain(victim, db_id=orm_obj.victimmasterid)
+            return VictimMapper.to_domain(orm_obj)
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to update victim: %s", e)
+            raise
+        finally:
+            db.close()
 
     @classmethod
     def delete_victim(cls, victim_id: str) -> bool:
-        """
-        Delete a victim by its ID.
-        """
-        for index, existing in enumerate(cls._victims):
-            if existing.victim_id == victim_id:
-                del cls._victims[index]
-                app_logger.info("Victim deleted | ID=%s", victim_id)
-                return True
-
-        return False
-
-    # ----------------------------------------------------------
-    # Query & Search
-    # ----------------------------------------------------------
+        db = SessionLocal()
+        try:
+            parsed_id = VictimMapper._parse_id(victim_id)
+            if parsed_id is None:
+                return False
+            orm_obj = db.get(VictimORM, parsed_id)
+            if not orm_obj:
+                return False
+            db.delete(orm_obj)
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            app_logger.error("Failed to delete victim: %s", e)
+            return False
+        finally:
+            db.close()
 
     @classmethod
     def query_victims(
         cls, options: VictimQueryOptions
     ) -> tuple[list[Victim], int]:
-        """
-        Query victims with filtering, keyword search, sorting, and pagination.
-        Returns a tuple of (items_subset, total_count).
-        """
-        filtered = list(cls._victims)
+        db = SessionLocal()
+        try:
+            stmt = select(VictimORM)
+            if options.case_master_id:
+                parsed_case_id = VictimMapper._parse_case_id(options.case_master_id)
+                stmt = stmt.where(VictimORM.casemasterid == parsed_case_id)
+            if options.name:
+                stmt = stmt.where(VictimORM.victimname.ilike(f"%{options.name}%"))
 
-        # 1. Filtering
-        if options.case_master_id:
-            filtered = [
-                v for v in filtered if v.case_master_id == options.case_master_id
-            ]
+            if hasattr(options, "sort_by") and options.sort_by:
+                sort_col = VictimORM.victimname
+                if str(options.sort_by).lower().endswith("name"):
+                    sort_col = VictimORM.victimname
+                elif str(options.sort_by).lower().endswith("age"):
+                    sort_col = VictimORM.ageyear
 
-        if options.gender:
-            filtered = [v for v in filtered if v.gender == options.gender]
+                if hasattr(options, "sort_order") and str(options.sort_order).lower().endswith("desc"):
+                    stmt = stmt.order_by(sort_col.desc())
+                else:
+                    stmt = stmt.order_by(sort_col.asc())
 
-        if options.age is not None:
-            filtered = [v for v in filtered if v.age == options.age]
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = db.scalar(count_stmt) or 0
 
-        if options.nationality:
-            filtered = [
-                v
-                for v in filtered
-                if v.nationality and v.nationality.lower() == options.nationality.lower()
-            ]
+            page = options.page or 1
+            size = options.page_size or 10
+            stmt = stmt.offset((page - 1) * size).limit(size)
 
-        if options.occupation:
-            filtered = [
-                v
-                for v in filtered
-                if v.occupation and v.occupation.lower() == options.occupation.lower()
-            ]
-
-        if options.id_type:
-            filtered = [v for v in filtered if v.id_type == options.id_type]
-
-        # 2. Case-Insensitive Keyword Searches
-        if options.name:
-            search_term = options.name.lower()
-            filtered = [v for v in filtered if search_term in v.name.lower()]
-
-        if options.mobile_no:
-            filtered = [
-                v
-                for v in filtered
-                if v.mobile_no and options.mobile_no in v.mobile_no
-            ]
-
-        if options.email:
-            search_email = options.email.lower()
-            filtered = [
-                v
-                for v in filtered
-                if v.email and search_email in v.email.lower()
-            ]
-
-        if options.id_number:
-            search_id = options.id_number.lower()
-            filtered = [
-                v
-                for v in filtered
-                if v.id_number and search_id in v.id_number.lower()
-            ]
-
-        total_count = len(filtered)
-
-        # 3. Sorting
-        SORT_FIELDS = {
-            VictimSortField.NAME: lambda v: v.name.lower(),
-            VictimSortField.AGE: lambda v: v.age or 0,
-            VictimSortField.CREATED_DATE: lambda v: v.created_at or datetime.min,
-            VictimSortField.UPDATED_DATE: lambda v: v.updated_at or datetime.min,
-        }
-
-        accessor = SORT_FIELDS.get(options.sort_by, lambda v: v.created_at)
-        reverse = options.sort_order == SortOrder.DESC
-        filtered.sort(key=accessor, reverse=reverse)
-
-        # 4. Pagination
-        start_idx = (options.page - 1) * options.page_size
-        end_idx = start_idx + options.page_size
-        subset = filtered[start_idx:end_idx]
-
-        return subset, total_count
+            orm_list = db.scalars(stmt).all()
+            return [VictimMapper.to_domain(o) for o in orm_list], total
+        finally:
+            db.close()

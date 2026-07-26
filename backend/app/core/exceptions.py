@@ -17,8 +17,14 @@ class CrimeSphereException(Exception):
 
 async def crimesphere_exception_handler(
     request: Request,
-    exc: CrimeSphereException,
-):
+    exc: Exception,
+) -> JSONResponse:
+    """Handle the registered domain exception with FastAPI's generic handler signature."""
+    if not isinstance(exc, CrimeSphereException):
+        # The handler is registered exclusively for CrimeSphereException. This
+        # guard keeps the callable safely typed for FastAPI's ExceptionHandler.
+        raise exc
+
     request_id = getattr(request.state, "request_id", "N/A")
 
     error_logger.error(
@@ -41,7 +47,7 @@ async def crimesphere_exception_handler(
 async def global_exception_handler(
     request: Request,
     exc: Exception,
-):
+) -> JSONResponse:
     request_id = getattr(request.state, "request_id", "N/A")
 
     error_logger.exception(

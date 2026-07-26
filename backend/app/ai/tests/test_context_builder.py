@@ -29,11 +29,13 @@ from app.models.complainant import Complainant
 from app.models.court_proceeding import CourtProceeding
 from app.models.evidence import Evidence
 from app.models.officer import OfficerAssignment
+from app.models.act import Act
 from app.models.section import Section
 from app.models.timeline import TimelineEvent
 from app.models.victim import Victim
 from app.models.witness import Witness
 from app.repository.accused_repository import AccusedRepository
+from app.repository.act_repository import ActRepository
 from app.repository.arrest_repository import ArrestRepository
 from app.repository.case_repository import CaseRepository
 from app.repository.case_section_repository import CaseSectionRepository
@@ -131,6 +133,10 @@ def setup_sample_case_data() -> str:
     WitnessRepository.create_witness(witness)
 
     # Act & Section
+    if not ActRepository.get_act_by_id("ACT-IPC"):
+        act = Act(act_id="ACT-IPC", name="Indian Penal Code", short_name="IPC")
+        ActRepository.create_act(act)
+
     section = Section(
         section_id="SEC-420",
         act_id="ACT-IPC",
