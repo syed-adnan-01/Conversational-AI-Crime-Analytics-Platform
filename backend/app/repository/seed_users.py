@@ -2,6 +2,16 @@ from app.core.roles import UserRole
 
 SEED_USERS = [
     {
+        "user_id": "USR000",
+        "employee_id": "ADM001",
+        "password": "password123",
+        "name": "System Administrator",
+        "email": "admin@crime.gov.in",
+        "department": "Administration",
+        "role": UserRole.ADMIN,
+        "is_active": True,
+    },
+    {
         "user_id": "USR001",
         "employee_id": "EMP001",
         "password": "password123",

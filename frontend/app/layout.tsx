@@ -41,7 +41,7 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans min-h-screen antialiased`}
         style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
       >
-        <AuthProvider><TooltipProvider delayDuration={300}>{children}</TooltipProvider></AuthProvider>
+        <AuthProvider><TooltipProvider delay={300}>{children}</TooltipProvider></AuthProvider>
       </body>
     </html>
   );

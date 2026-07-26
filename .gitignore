@@ -30,8 +30,36 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — never commit secrets
+.env
+.env.*
+.env.local
+.env.*.local
+
+# Zoho Catalyst auth & session — contains project IDs and org IDs
+.catalystrc
+catalyst.json.backup
+
+# Python virtual environments
+backend/.venv/
+backend/.ven/
+
+# Python cache
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+
+# Logs
+backend/logs/
+*.log
+
+# Seed / generated data (may contain PII)
+backend/scripts/graph_seed.cypher
+backend/scripts/seed_output/
+
+# SQLite fallback DB (if created locally)
+*.db
+*.sqlite3
 
 # vercel
 .vercel

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { kpiStats } from "@/lib/mock-data/dashboard";
-import StatCard from "@/components/dashboard/StatCard";
+import DashboardKPIs from "@/components/dashboard/DashboardKPIs";
 import CrimeTrendChart from "@/components/dashboard/CrimeTrendChart";
 import AlertsFeed from "@/components/dashboard/AlertsFeed";
 import RecentFIRsTable from "@/components/dashboard/RecentFIRsTable";
@@ -15,11 +14,7 @@ export default function DashboardPage() {
     <div className="space-y-6 max-w-[1600px] mx-auto">
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpiStats.map((stat, i) => (
-          <StatCard key={stat.id} {...stat} index={i} />
-        ))}
-      </div>
+      <DashboardKPIs />
 
       {/* ── Crime Trend + Alerts ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">

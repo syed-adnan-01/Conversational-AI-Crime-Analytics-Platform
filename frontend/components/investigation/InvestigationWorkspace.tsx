@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Folder, FileText, Camera, Video, FlaskConical, Monitor,
   Package, User, Clock, Shield, Brain, CheckCircle2,
-  Circle, Loader2, ChevronRight, AlertTriangle, Search,
-  Users, Paperclip, ListChecks, CalendarClock, Star,
+  Circle, Loader2, AlertTriangle, Search,
+  Users, Paperclip, CalendarClock, Star,
 } from "lucide-react";
-import { INVESTIGATION_CASES, type InvestigationCase, type EvidenceItem, type TimelineEvent, type CaseSuspect, type InvestigationTask } from "@/lib/mock-data/investigation";
+import { type InvestigationCase, type EvidenceItem, type EvidenceStatus, type EventType, type TimelineEvent, type CaseSuspect } from "@/lib/mock-data/investigation";
 import { formatRelativeTime, formatDate } from "@/lib/utils";
+import { searchCases, getCase, caseEvidence, caseTimeline, caseAccused } from "@/lib/services/cases";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -20,24 +21,25 @@ const PRIORITY_CFG = {
   low:      { color: "#30d158", bg: "rgba(48,209,88,0.12)",  label: "Low" },
 };
 
-const EVIDENCE_ICONS: Record<EvidenceItem["type"], React.ElementType> = {
+const EVIDENCE_ICONS: Record<string, React.ElementType> = {
   document: FileText, photo: Camera, video: Video, forensics: FlaskConical,
-  digital: Monitor, physical: Package, witness: User,
+  digital: Monitor, physical: Package, witness: User, default: Paperclip
 };
 
-const EVIDENCE_COLORS: Record<EvidenceItem["type"], string> = {
+const EVIDENCE_COLORS: Record<string, string> = {
   document: "#0070f3", photo: "#bf5af2", video: "#ff8c00", forensics: "#30d158",
-  digital: "#ffd60a", physical: "#526080", witness: "#ff2d55",
+  digital: "#ffd60a", physical: "#526080", witness: "#ff2d55", default: "#94a3c0"
 };
 
-const EV_STATUS_CFG = {
+const EV_STATUS_CFG: Record<string, { color: string; label: string }> = {
   analysed:    { color: "#30d158", label: "Analysed" },
   pending:     { color: "#ffd60a", label: "Pending" },
   contaminated:{ color: "#ff2d55", label: "Contaminated" },
   sealed:      { color: "#0070f3", label: "Sealed" },
+  default:     { color: "#526080", label: "Unknown" },
 };
 
-const EVENT_CFG: Record<TimelineEvent["type"], { color: string; icon: React.ElementType }> = {
+const EVENT_CFG: Record<string, { color: string; icon: React.ElementType }> = {
   discovery:  { color: "#ff2d55", icon: AlertTriangle },
   arrest:     { color: "#30d158", icon: Shield },
   forensics:  { color: "#bf5af2", icon: FlaskConical },
@@ -45,16 +47,18 @@ const EVENT_CFG: Record<TimelineEvent["type"], { color: string; icon: React.Elem
   court:      { color: "#ffd60a", icon: FileText },
   operation:  { color: "#ff8c00", icon: Star },
   witness:    { color: "#526080", icon: User },
+  default:    { color: "#94a3c0", icon: Circle }
 };
 
-const SUSPECT_STATUS = {
+const SUSPECT_STATUS: Record<string, { color: string; label: string }> = {
   wanted:   { color: "#ff2d55", label: "Wanted" },
   arrested: { color: "#30d158", label: "Arrested" },
   released: { color: "#ff8c00", label: "Released" },
   unknown:  { color: "#ffd60a", label: "Unknown" },
+  default:  { color: "#526080", label: "Unknown" },
 };
 
-const TASK_STATUS = {
+const TASK_STATUS: Record<string, { icon: React.ElementType; color: string }> = {
   "done":        { icon: CheckCircle2, color: "#30d158" },
   "in-progress": { icon: Loader2,      color: "#ffd60a" },
   "pending":     { icon: Circle,       color: "#526080" },
@@ -67,7 +71,7 @@ function initials(name: string) {
 // ─── Sub-tabs ─────────────────────────────────────────────────────────────────
 
 function OverviewTab({ c }: { c: InvestigationCase }) {
-  const p = PRIORITY_CFG[c.priority];
+  const p = PRIORITY_CFG[c.priority as keyof typeof PRIORITY_CFG] || PRIORITY_CFG.medium;
   const done  = c.tasks.filter((t) => t.status === "done").length;
   const total = c.tasks.length;
 
@@ -112,7 +116,7 @@ function OverviewTab({ c }: { c: InvestigationCase }) {
       {/* Description */}
       <div>
         <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#2a3a55" }}>Case Description</p>
-        <p className="text-xs leading-relaxed" style={{ color: "#94a3c0" }}>{c.description}</p>
+        <p className="text-xs leading-relaxed" style={{ color: "#94a3c0" }}>{c.description || "No description available."}</p>
       </div>
 
       {/* Lead officer + team */}
@@ -144,11 +148,14 @@ function OverviewTab({ c }: { c: InvestigationCase }) {
         </div>
         <div className="w-full h-2 rounded-full overflow-hidden mb-3" style={{ background: "rgba(255,255,255,0.07)" }}>
           <motion.div className="h-full rounded-full bg-green-400" initial={{ width: 0 }}
-            animate={{ width: `${(done / total) * 100}%` }} transition={{ duration: 0.8 }} />
+            animate={{ width: total > 0 ? `${(done / total) * 100}%` : "0%" }} transition={{ duration: 0.8 }} />
         </div>
         <div className="space-y-2">
+          {c.tasks.length === 0 && (
+            <p className="text-xs text-center text-[#526080] py-4">No tasks found.</p>
+          )}
           {c.tasks.map((task) => {
-            const cfg = TASK_STATUS[task.status];
+            const cfg = TASK_STATUS[task.status] || TASK_STATUS["pending"];
             const Icon = cfg.icon;
             return (
               <div key={task.id} className="flex items-start gap-2.5">
@@ -169,12 +176,13 @@ function OverviewTab({ c }: { c: InvestigationCase }) {
 }
 
 function EvidenceTab({ items }: { items: EvidenceItem[] }) {
+  if (!items || items.length === 0) return <p className="text-sm text-center text-[#526080] mt-10">No evidence found.</p>;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {items.map((ev, i) => {
-        const Icon  = EVIDENCE_ICONS[ev.type];
-        const color = EVIDENCE_COLORS[ev.type];
-        const sc    = EV_STATUS_CFG[ev.status];
+        const Icon  = EVIDENCE_ICONS[ev.type] || EVIDENCE_ICONS.default;
+        const color = EVIDENCE_COLORS[ev.type] || EVIDENCE_COLORS.default;
+        const sc    = EV_STATUS_CFG[ev.status] || EV_STATUS_CFG.default;
         return (
           <motion.div key={ev.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
             className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -205,6 +213,7 @@ function EvidenceTab({ items }: { items: EvidenceItem[] }) {
 }
 
 function TimelineTab({ events }: { events: TimelineEvent[] }) {
+  if (!events || events.length === 0) return <p className="text-sm text-center text-[#526080] mt-10">No timeline events found.</p>;
   const sorted = [...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   return (
     <div className="relative">
@@ -212,7 +221,7 @@ function TimelineTab({ events }: { events: TimelineEvent[] }) {
       <div className="absolute left-4 top-2 bottom-2 w-px" style={{ background: "rgba(255,255,255,0.07)" }} />
       <div className="space-y-4 pl-12">
         {sorted.map((ev, i) => {
-          const cfg  = EVENT_CFG[ev.type];
+          const cfg  = EVENT_CFG[ev.type] || EVENT_CFG.default;
           const Icon = cfg.icon;
           return (
             <motion.div key={ev.id} initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
@@ -245,10 +254,11 @@ function TimelineTab({ events }: { events: TimelineEvent[] }) {
 }
 
 function SuspectsTab({ suspects }: { suspects: CaseSuspect[] }) {
+  if (!suspects || suspects.length === 0) return <p className="text-sm text-center text-[#526080] mt-10">No suspects found.</p>;
   return (
     <div className="space-y-4">
       {suspects.map((s, i) => {
-        const st = SUSPECT_STATUS[s.status];
+        const st = SUSPECT_STATUS[s.status] || SUSPECT_STATUS.default;
         return (
           <motion.div key={s.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
             className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -297,16 +307,142 @@ const TABS = [
 type TabKey = typeof TABS[number]["key"];
 
 export default function InvestigationWorkspace() {
-  const [selectedId, setSelectedId] = useState(INVESTIGATION_CASES[0].id);
+  const [cases, setCases] = useState<InvestigationCase[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTab,  setActiveTab]  = useState<TabKey>("overview");
   const [search,     setSearch]     = useState("");
+  const [loadingList, setLoadingList] = useState(true);
+  
+  // Real active case data
+  const [activeCase, setActiveCase] = useState<InvestigationCase | null>(null);
+  const [loadingActive, setLoadingActive] = useState(false);
 
-  const selected = INVESTIGATION_CASES.find((c) => c.id === selectedId)!;
-  const filtered = INVESTIGATION_CASES.filter((c) =>
+  // 1. Fetch case list for left panel
+  useEffect(() => {
+    let mounted = true;
+    searchCases({ page: 1, page_size: 20 /* Investigating maybe? We just fetch all for now */ })
+      .then((res) => {
+        if (!mounted) return;
+        const items: InvestigationCase[] = res.items.map((item) => ({
+          id: item.case_master_id,
+          firNumber: item.crime_no,
+          title: item.case_no || `FIR - ${item.crime_no}`,
+          priority: "medium",
+          status: "active",
+          openedAt: item.crime_registered_date || new Date().toISOString(),
+          lastUpdated: item.crime_registered_date || new Date().toISOString(),
+          crimeType: "Criminal Offense",
+          description: "",
+          district: `District ${item.police_station_id}`,
+          leadOfficer: "Unknown",
+          leadRank: "Officer",
+          daysActive: Math.floor((Date.now() - new Date(item.crime_registered_date).getTime()) / (1000 * 3600 * 24)) || 0,
+          aiScore: 0,
+          evidenceCount: 0,
+          suspectCount: 0,
+          witnessCount: 0,
+          teamMembers: [],
+          tasks: [],
+          evidence: [],
+          timeline: [],
+          suspects: []
+        }));
+        setCases(items);
+        if (items.length > 0 && !selectedId) {
+          setSelectedId(items[0].id);
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (mounted) setLoadingList(false);
+      });
+      
+    return () => { mounted = false; };
+  }, []); // Only on mount
+
+  // 2. Fetch full case detail when selectedId changes
+  useEffect(() => {
+    if (!selectedId) return;
+    
+    let mounted = true;
+    
+    Promise.all([
+      getCase(selectedId).catch(() => null),
+      caseEvidence(selectedId).catch(() => ({ items: [] })),
+      caseTimeline(selectedId).catch(() => ({ items: [] })),
+      caseAccused(selectedId).catch(() => ({ items: [] }))
+    ]).then(([detailRes, evidenceRes, timelineRes, accusedRes]) => {
+      if (!mounted) return;
+      
+      const detail = (detailRes || {}) as Record<string, unknown>;
+      const evs = evidenceRes?.items || [];
+      const evCount = evs.length;
+      
+      const timelineData = timelineRes?.items || [];
+      const accusedData = accusedRes?.items || [];
+      
+      // Map to InvestigationCase
+      const fullCase: InvestigationCase = {
+        id: selectedId,
+        firNumber: String(detail.crime_no || "N/A"),
+        title: String(detail.case_no || (detail.crime_no ? `FIR - ${detail.crime_no}` : "FIR Case")),
+        priority: "medium", // Backend doesn't provide this yet
+        status: "active",
+        openedAt: String(detail.crime_registered_date || new Date().toISOString()),
+        lastUpdated: String(detail.crime_registered_date || new Date().toISOString()),
+        crimeType: "Criminal Offense",
+        description: String(detail.brief_facts || "No description provided."),
+        district: `PS ID: ${detail.police_station_id}`,
+        leadOfficer: detail.police_person_id ? `Officer ${detail.police_person_id}` : "Unassigned",
+        leadRank: "Investigator",
+        daysActive: detail.crime_registered_date ? Math.floor((Date.now() - new Date(detail.crime_registered_date).getTime()) / (1000 * 3600 * 24)) : 0,
+        aiScore: 85, // Stub
+        evidenceCount: evCount,
+        suspectCount: accusedData.length,
+        witnessCount: 0,
+        teamMembers: [],
+        tasks: [], // Backend doesn't have tasks
+        evidence: evs.map((e: Record<string, unknown>) => ({
+          id: String(e.evidence_id || Math.random()),
+          name: String(e.title || "Evidence"),
+          type: (["document", "photo", "video", "forensics", "digital", "physical", "witness"].includes(String(e.evidence_type).toLowerCase()) ? String(e.evidence_type).toLowerCase() : "document") as EvidenceItem["type"],
+          collectedFrom: String(e.collection_location || "Unknown"),
+          collectedAt: String(e.collection_date || new Date().toISOString()),
+          addedBy: String(e.collected_by || "System"),
+          status: (["analysed", "pending", "contaminated", "sealed"].includes(String(e.status).toLowerCase()) ? String(e.status).toLowerCase() : "pending") as EvidenceStatus,
+          notes: String(e.description || ""),
+          url: String(e.storage_key || "")
+        })),
+        timeline: timelineData.map((t: Record<string, unknown>) => ({
+          id: String(t.event_id || Math.random()),
+          date: String(t.event_time || new Date().toISOString()),
+          title: String(t.title || "Event"),
+          description: String(t.description || ""),
+          type: (["discovery", "arrest", "forensics", "lead", "court", "operation", "witness"].includes(String(t.event_type).toLowerCase()) ? String(t.event_type).toLowerCase() : "discovery") as EventType,
+          addedBy: String(t.created_by || "System")
+        })),
+        suspects: accusedData.map((a: Record<string, unknown>) => ({
+          id: String(a.accused_id || Math.random()),
+          name: String(a.name || "Unknown"),
+          alias: String(a.alias || ""),
+          role: "Accused",
+          status: (["arrested", "wanted", "released", "unknown"].includes(String(a.status).toLowerCase()) ? String(a.status).toLowerCase() : "unknown") as CaseSuspect["status"],
+          threatScore: 50,
+          notes: String(a.notes || "")
+        }))
+      };
+      
+      setActiveCase(fullCase);
+    }).finally(() => {
+      if (mounted) setLoadingActive(false);
+    });
+    
+    return () => { mounted = false; };
+  }, [selectedId]);
+
+  const filtered = cases.filter((c) =>
     !search || c.title.toLowerCase().includes(search.toLowerCase()) || c.firNumber.toLowerCase().includes(search.toLowerCase())
   );
-
-  const p = PRIORITY_CFG[selected.priority];
 
   return (
     <div className="flex h-[calc(100vh-4rem)] -m-6 overflow-hidden">
@@ -325,9 +461,14 @@ export default function InvestigationWorkspace() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1.5">
-          {filtered.map((c) => {
-            const cp = PRIORITY_CFG[c.priority];
+        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1.5 relative">
+          {loadingList && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-[#2b91ff]" />
+            </div>
+          )}
+          {!loadingList && filtered.map((c) => {
+            const cp = PRIORITY_CFG[c.priority as keyof typeof PRIORITY_CFG] || PRIORITY_CFG.medium;
             const isActive = c.id === selectedId;
             return (
               <button key={c.id} onClick={() => { setSelectedId(c.id); setActiveTab("overview"); }}
@@ -349,7 +490,7 @@ export default function InvestigationWorkspace() {
                 {/* Mini progress */}
                 <div className="mt-2 w-full h-0.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
                   <div className="h-full rounded-full bg-green-400"
-                    style={{ width: `${(c.tasks.filter((t) => t.status === "done").length / c.tasks.length) * 100}%` }} />
+                    style={{ width: `${(c.tasks.filter((t) => t.status === "done").length / Math.max(1, c.tasks.length)) * 100}%` }} />
                 </div>
               </button>
             );
@@ -358,7 +499,7 @@ export default function InvestigationWorkspace() {
 
         <div className="px-4 py-3 shrink-0 text-center" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <p className="text-[10px]" style={{ color: "#2a3a55" }}>
-            {INVESTIGATION_CASES.length} active cases · {INVESTIGATION_CASES.filter((c) => c.priority === "critical").length} critical
+            {cases.length} active cases
           </p>
         </div>
       </div>
@@ -366,70 +507,82 @@ export default function InvestigationWorkspace() {
       {/* ═══ RIGHT: Workspace ═══ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "#080b12" }}>
 
-        {/* Case header */}
-        <div className="px-6 py-4 shrink-0"
-          style={{ background: "rgba(10,15,30,0.95)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-xs font-mono font-bold" style={{ color: "#2b91ff" }}>{selected.firNumber}</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: p.bg, color: p.color }}>{p.label} Priority</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "rgba(255,140,0,0.1)", color: "#ff8c00" }}>Active</span>
-                <span className="flex items-center gap-1 text-[10px]" style={{ color: "#2a3a55" }}>
-                  <Clock className="w-3 h-3" /> {selected.daysActive} days active
-                </span>
+        {!activeCase || loadingActive ? (
+          <div className="flex-1 flex flex-col items-center justify-center">
+            {loadingActive ? (
+              <Loader2 className="w-8 h-8 animate-spin text-[#2b91ff]" />
+            ) : (
+              <p className="text-sm text-[#526080]">Select a case to view investigation workspace</p>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Case header */}
+            <div className="px-6 py-4 shrink-0"
+              style={{ background: "rgba(10,15,30,0.95)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-xs font-mono font-bold" style={{ color: "#2b91ff" }}>{activeCase.firNumber}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: PRIORITY_CFG.medium.bg, color: PRIORITY_CFG.medium.color }}>{PRIORITY_CFG.medium.label} Priority</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "rgba(255,140,0,0.1)", color: "#ff8c00" }}>Active</span>
+                    <span className="flex items-center gap-1 text-[10px]" style={{ color: "#2a3a55" }}>
+                      <Clock className="w-3 h-3" /> {activeCase.daysActive} days active
+                    </span>
+                  </div>
+                  <h2 className="text-base font-bold text-white">{activeCase.title}</h2>
+                  <p className="text-xs mt-0.5" style={{ color: "#526080" }}>
+                    Case ID: {activeCase.id} · {activeCase.district} · Lead: {activeCase.leadOfficer}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button className="text-xs px-3 py-1.5 rounded-lg transition-colors"
+                    style={{ background: "rgba(255,45,85,0.1)", border: "1px solid rgba(255,45,85,0.2)", color: "#ff2d55" }}>
+                    Escalate
+                  </button>
+                  <button className="text-xs px-3 py-1.5 rounded-lg transition-colors"
+                    style={{ background: "rgba(0,112,243,0.1)", border: "1px solid rgba(0,112,243,0.2)", color: "#2b91ff" }}>
+                    Export Report
+                  </button>
+                </div>
               </div>
-              <h2 className="text-base font-bold text-white">{selected.title}</h2>
-              <p className="text-xs mt-0.5" style={{ color: "#526080" }}>
-                {selected.crimeType} · {selected.district} · Lead: {selected.leadOfficer}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button className="text-xs px-3 py-1.5 rounded-lg transition-colors"
-                style={{ background: "rgba(255,45,85,0.1)", border: "1px solid rgba(255,45,85,0.2)", color: "#ff2d55" }}>
-                Escalate
-              </button>
-              <button className="text-xs px-3 py-1.5 rounded-lg transition-colors"
-                style={{ background: "rgba(0,112,243,0.1)", border: "1px solid rgba(0,112,243,0.2)", color: "#2b91ff" }}>
-                Export Report
-              </button>
-            </div>
-          </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 mt-4">
-            {TABS.map(({ key, label, icon: Icon }) => (
-              <button key={key} onClick={() => setActiveTab(key)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
-                style={{
-                  background: activeTab === key ? "rgba(0,112,243,0.15)" : "transparent",
-                  border: activeTab === key ? "1px solid rgba(0,112,243,0.3)" : "1px solid transparent",
-                  color: activeTab === key ? "#2b91ff" : "#526080",
-                }}>
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-                {key === "evidence" && <span className="text-[10px] px-1.5 py-0.5 rounded-full"
-                  style={{ background: "rgba(255,255,255,0.08)", color: "#94a3c0" }}>{selected.evidenceCount}</span>}
-                {key === "suspects" && <span className="text-[10px] px-1.5 py-0.5 rounded-full"
-                  style={{ background: "rgba(255,255,255,0.08)", color: "#94a3c0" }}>{selected.suspectCount}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
+              {/* Tabs */}
+              <div className="flex gap-1 mt-4">
+                {TABS.map(({ key, label, icon: Icon }) => (
+                  <button key={key} onClick={() => setActiveTab(key)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+                    style={{
+                      background: activeTab === key ? "rgba(0,112,243,0.15)" : "transparent",
+                      border: activeTab === key ? "1px solid rgba(0,112,243,0.3)" : "1px solid transparent",
+                      color: activeTab === key ? "#2b91ff" : "#526080",
+                    }}>
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                    {key === "evidence" && <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                      style={{ background: "rgba(255,255,255,0.08)", color: "#94a3c0" }}>{activeCase.evidenceCount}</span>}
+                    {key === "suspects" && <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                      style={{ background: "rgba(255,255,255,0.08)", color: "#94a3c0" }}>{activeCase.suspectCount}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* Tab content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <AnimatePresence mode="wait">
-            <motion.div key={`${selectedId}-${activeTab}`}
-              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-              {activeTab === "overview"  && <OverviewTab  c={selected} />}
-              {activeTab === "evidence"  && <EvidenceTab  items={selected.evidence} />}
-              {activeTab === "timeline"  && <TimelineTab  events={selected.timeline} />}
-              {activeTab === "suspects"  && <SuspectsTab  suspects={selected.suspects} />}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+            {/* Tab content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <AnimatePresence mode="wait">
+                <motion.div key={`${selectedId}-${activeTab}`}
+                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                  {activeTab === "overview"  && <OverviewTab  c={activeCase} />}
+                  {activeTab === "evidence"  && <EvidenceTab  items={activeCase.evidence} />}
+                  {activeTab === "timeline"  && <TimelineTab  events={activeCase.timeline} />}
+                  {activeTab === "suspects"  && <SuspectsTab  suspects={activeCase.suspects} />}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

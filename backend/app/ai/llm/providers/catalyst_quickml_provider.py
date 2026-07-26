@@ -7,6 +7,7 @@ import time
 import uuid
 from typing import AsyncGenerator, Dict, Any
 
+from app.ai.quickml.knowledge_base_service import knowledge_base_service
 from app.ai.llm.capabilities import ProviderCapabilities
 from app.ai.llm.config import llm_config
 from app.ai.llm.llm_cost import LLMCostCalculator
@@ -60,8 +61,17 @@ class CatalystQuickMLProvider(BaseLLMProvider):
         sys_p = request.system_prompt or (request.prompt_response.system_prompt if request.prompt_response else "")
         full_text = f"{sys_p}\n{user_p}".strip()
 
-        # Simulate QuickML execution or HTTP REST response parsing
-        content = self._generate_quickml_content(user_p, request.response_schema)
+        try:
+            retrieval = knowledge_base_service.retrieve(
+                user_p,
+                case_context={"response_schema": request.response_schema} if request.response_schema else None,
+            )
+            content = retrieval.answer
+            citations = retrieval.citations
+        except Exception:
+            # Preserve the existing mock fallback when QuickML is unavailable.
+            content = self._generate_quickml_content(user_p, request.response_schema)
+            citations = []
         latency = round((time.time() - start) * 1000, 2)
 
         p_tokens = self.count_tokens(full_text)
@@ -74,6 +84,7 @@ class CatalystQuickMLProvider(BaseLLMProvider):
             provider="quickml",
             model="quickml-rag-v1",
             content=content,
+            citations=citations,
             finish_reason="STOP",
             latency_ms=latency,
             token_usage=TokenUsage(

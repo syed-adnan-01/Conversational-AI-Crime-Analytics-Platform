@@ -14,11 +14,20 @@ from app.core.config import settings
 
 logger = logging.getLogger("crimesphere.database")
 
+db_url = settings.DATABASE_URL
+if not db_url:
+    logger.warning("DATABASE_URL is empty! Falling back to in-memory SQLite to prevent startup crash.")
+    db_url = "sqlite:///:memory:"
+
+engine_kwargs = {}
+if not db_url.startswith("sqlite"):
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+
 engine = create_engine(
-    settings.DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    db_url,
+    **engine_kwargs
 )
 
 SessionLocal = sessionmaker(
@@ -38,22 +47,22 @@ def seed_reference_data():
             VALUES (1, 1, 1, 1, 1, 'Default Officer')
             ON CONFLICT (employeeid) DO NOTHING;
 
-            INSERT INTO unit (unitid, unitname, unittypeid) VALUES (1, 'Central Station', 1), (101, 'Indiranagar PS', 1)
+            INSERT INTO unit (unitid, unitname, unittypeid, stateid, districtid) VALUES (1, 'Central Station', 1, 1, 1), (101, 'Indiranagar PS', 1, 1, 1)
             ON CONFLICT (unitid) DO NOTHING;
 
-            INSERT INTO casecategory (casecategoryid, categoryname) VALUES (1, 'General Crime')
+            INSERT INTO casecategory (casecategoryid, lookupvalue) VALUES (1, 'General Crime')
             ON CONFLICT (casecategoryid) DO NOTHING;
 
-            INSERT INTO gravityoffence(gravityoffenceid, gravityname) VALUES (1, 'Cognizable')
+            INSERT INTO gravityoffence(gravityoffenceid, lookupvalue) VALUES (1, 'Cognizable')
             ON CONFLICT (gravityoffenceid) DO NOTHING;
 
-            INSERT INTO crimehead (crimeheadid, headname) VALUES (1, 'Theft')
+            INSERT INTO crimehead (crimeheadid, crimegroupname) VALUES (1, 'Theft')
             ON CONFLICT (crimeheadid) DO NOTHING;
 
-            INSERT INTO crimesubhead (crimesubheadid, subheadname) VALUES (1, 'Vehicle Theft')
+            INSERT INTO crimesubhead (crimesubheadid, crimeheadid, crimeheadname) VALUES (1, 1, 'Vehicle Theft')
             ON CONFLICT (crimesubheadid) DO NOTHING;
 
-            INSERT INTO casestatusmaster (casestatusid, statusname) VALUES (1, 'Under Investigation')
+            INSERT INTO casestatusmaster (casestatusid, casestatusname) VALUES (1, 'Under Investigation')
             ON CONFLICT (casestatusid) DO NOTHING;
 
             INSERT INTO act (actcode, actdescription, shortname, active) VALUES ('BNS', 'Bharatiya Nyaya Sanhita', 'BNS 2023', true)

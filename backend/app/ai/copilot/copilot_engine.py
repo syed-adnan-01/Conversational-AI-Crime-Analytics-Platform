@@ -34,6 +34,7 @@ from app.ai.copilot.memory.memory_manager import MemoryManager
 from app.ai.copilot.planner.copilot_planner import CopilotPlanner
 from app.ai.copilot.response_factory import ResponseFactory
 from app.ai.copilot.workflows.workflow_registry import WorkflowRegistry
+from app.ai.quickml.knowledge_base_service import knowledge_base_service
 
 _config = CopilotConfig()
 
@@ -72,7 +73,7 @@ class CopilotEngine:
         trace.add("Plan selected", f"Strategy={plan.selected_strategy} confidence={plan.confidence}")
 
         # 4. Dispatch
-        answer, provider_used, confidence = self._dispatch(request, plan, trace)
+        answer, provider_used, confidence, citations, metadata = self._dispatch(request, plan, trace)
 
         # 5. Record turn in three-tier memory
         MemoryManager.get_or_create_store(request.session_id, request.case_id)
@@ -107,6 +108,8 @@ class CopilotEngine:
             provider_used=provider_used,
             confidence=confidence,
             latency_ms=elapsed,
+            citations=citations,
+            metadata=metadata,
         )
 
     # ------------------------------------------------------------------
@@ -118,7 +121,7 @@ class CopilotEngine:
         request: CopilotRequest,
         plan: ExecutionPlan,
         trace: ReasoningTrace,
-    ) -> tuple[str, str, float]:
+    ) -> tuple[str, str, float, list[str], dict[str, object]]:
         """Dispatch to the appropriate handler based on the plan strategy."""
 
         strategy = plan.selected_strategy
@@ -144,7 +147,7 @@ class CopilotEngine:
         request: CopilotRequest,
         plan: ExecutionPlan,
         trace: ReasoningTrace,
-    ) -> tuple[str, str, float]:
+    ) -> tuple[str, str, float, list[str], dict[str, object]]:
         q_lower = request.user_message.lower()
         if "chargesheet" in q_lower:
             wf_name = "chargesheet_workflow"
@@ -160,13 +163,13 @@ class CopilotEngine:
         trace.add("Workflow selected", wf_name)
         result = WorkflowRegistry.execute(wf_name, request.session_id, request.case_id, {"query": request.user_message})
         answer = result.message if result.success else f"Workflow failed: {result.error}"
-        return answer, "workflow_engine", result.confidence or 0.9
+        return answer, "workflow_engine", result.confidence or 0.9, [], {}
 
     def _handle_memory(
         self,
         request: CopilotRequest,
         trace: ReasoningTrace,
-    ) -> tuple[str, str, float]:
+    ) -> tuple[str, str, float, list[str], dict[str, object]]:
         recent = MemoryManager.get_recent(request.session_id, limit=5)
         if not recent:
             answer = "I don't have any earlier messages in our current session."
@@ -174,31 +177,47 @@ class CopilotEngine:
             summary_lines = [f"- [{m.role}]: {m.content[:100]}" for m in recent]
             answer = "Here is what we discussed earlier:\n" + "\n".join(summary_lines)
         trace.add("Memory recalled", f"{len(recent)} turns retrieved")
-        return answer, "memory_engine", 0.95
+        return answer, "memory_engine", 0.95, [], {}
 
     def _handle_rag(
         self,
         request: CopilotRequest,
         trace: ReasoningTrace,
-    ) -> tuple[str, str, float]:
-        # RAG: would invoke RetrievalEngine then LLM Gateway — stubbed for Phase 3.6
-        trace.add("RAG retrieval", "Vector retrieval stub (Phase 3.7 will wire live retrieval)")
-        answer = (
-            f"Based on case {request.case_id}: I searched the case documents and "
-            f"retrieved relevant information for your query. [RAG pipeline active — "
-            f"live vector retrieval will be wired in Phase 3.7.]"
-        )
-        return answer, "quickml", 0.88
+    ) -> tuple[str, str, float, list[str], dict[str, object]]:
+        trace.add("RAG retrieval", "Calling QuickML knowledge base service")
+        try:
+            recent_memory = MemoryManager.get_recent(request.session_id, limit=5)
+            chat_history = [{"role": m.role, "content": m.content} for m in recent_memory] if recent_memory else []
+            result = knowledge_base_service.retrieve(
+                request.user_message,
+                case_context={"case_id": request.case_id, "chat_history": chat_history, **(request.context or {})},
+            )
+            trace.add("RAG answer", f"Retrieved {len(result.citations)} citations")
+            metadata = {"citations": result.citations, "kb_latency_ms": result.latency_ms}
+            return result.answer, "quickml", result.confidence, result.citations, metadata
+        except Exception as exc:
+            trace.add("RAG fallback", f"QuickML retrieval failed: {exc}")
+            from app.ai.llm.providers.catalyst_quickml_provider import CatalystQuickMLProvider
+            answer = CatalystQuickMLProvider()._generate_quickml_content(request.user_message, None)
+            return answer, "quickml", 0.88, [], {"citations": []}
 
     def _handle_direct(
         self,
         request: CopilotRequest,
         trace: ReasoningTrace,
-    ) -> tuple[str, str, float]:
-        trace.add("Direct LLM", "Generating response without retrieval")
-        answer = (
-            f"As your AI investigation copilot for case {request.case_id}, "
-            f"I'm ready to help you investigate. {request.user_message[:50]}... "
-            f"[Direct LLM response active.]"
-        )
-        return answer, "quickml", 0.80
+    ) -> tuple[str, str, float, list[str], dict[str, object]]:
+        trace.add("Direct LLM", "Generating response via QuickML knowledge base")
+        try:
+            recent_memory = MemoryManager.get_recent(request.session_id, limit=5)
+            chat_history = [{"role": m.role, "content": m.content} for m in recent_memory] if recent_memory else []
+            result = knowledge_base_service.retrieve(
+                request.user_message,
+                case_context={"case_id": request.case_id, "chat_history": chat_history, **(request.context or {})},
+            )
+            metadata = {"citations": result.citations, "kb_latency_ms": result.latency_ms}
+            return result.answer, "quickml", result.confidence, result.citations, metadata
+        except Exception as exc:
+            trace.add("Direct fallback", f"QuickML retrieval failed: {exc}")
+            from app.ai.llm.providers.catalyst_quickml_provider import CatalystQuickMLProvider
+            answer = CatalystQuickMLProvider()._generate_quickml_content(request.user_message, None)
+            return answer, "quickml", 0.80, [], {"citations": []}

@@ -25,7 +25,7 @@ class UserRepository:
         db = SessionLocal()
         try:
             # Clean up test dynamic users so test lifespans start fresh
-            db.execute(delete(UserORM).where(UserORM.employee_id.notin_(["EMP001", "EMP002", "EMP003"])))
+            db.execute(delete(UserORM).where(UserORM.employee_id.notin_(["ADM001", "EMP001", "EMP002", "EMP003"])))
 
             for seed in SEED_USERS:
                 stmt = select(UserORM).where(UserORM.employee_id == seed["employee_id"])
@@ -89,6 +89,12 @@ class UserRepository:
             return [UserMapper.to_domain(item) for item in db.scalars(select(UserORM)).all()]
         finally:
             db.close()
+
+    @classmethod
+    def get_department_map(cls) -> dict:
+        """Return a copy of the in-memory employee_id -> department mapping."""
+        from app.database.mappers.user_mapper import DEPT_MAP
+        return dict(DEPT_MAP)
 
     @classmethod
     def save_user(cls, user: User, password: str = "") -> User:

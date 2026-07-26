@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -13,15 +13,11 @@ import {
   Users,
   TrendingUp,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
-import {
-  NETWORK_NODES,
-  NETWORK_EDGES,
-  TIER_CONFIG,
-  STATUS_CONFIG,
-  EDGE_CONFIG,
-  type NetworkNode,
-} from "@/lib/mock-data/network";
+import { TIER_CONFIG, STATUS_CONFIG, EDGE_CONFIG, type NetworkNode, type NodeStatus } from "@/lib/mock-data/network";
+import { searchCases } from "@/lib/services/cases";
+import { ai } from "@/lib/services/ai";
 
 // ─── SVG dimensions ───────────────────────────────────────────────────────────
 const W = 900;
@@ -32,17 +28,25 @@ function initials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
+interface GraphEdge {
+  id?: string;
+  source: string;
+  target: string;
+  type?: string;
+  strength?: number | string;
+}
+
 // ─── Node Detail Panel ────────────────────────────────────────────────────────
-function NodeDetail({ node, onClose }: { node: NetworkNode; onClose: () => void }) {
-  const tier   = TIER_CONFIG[node.tier];
-  const status = STATUS_CONFIG[node.status];
-  const edges  = NETWORK_EDGES.filter(
+function NodeDetail({ node, nodes, edges, onClose }: { node: NetworkNode; nodes: NetworkNode[], edges: GraphEdge[], onClose: () => void }) {
+  const tier   = TIER_CONFIG[node.tier] || TIER_CONFIG[3];
+  const status = STATUS_CONFIG[node.status] || STATUS_CONFIG["unknown"];
+  const nodeEdges  = edges.filter(
     (e) => e.source === node.id || e.target === node.id
   );
-  const connectedNodes = edges.map((e) => {
+  const connectedNodes = nodeEdges.map((e) => {
     const otherId = e.source === node.id ? e.target : e.source;
-    return NETWORK_NODES.find((n) => n.id === otherId)!;
-  });
+    return nodes.find((n) => n.id === otherId)!;
+  }).filter(Boolean);
 
   return (
     <motion.div
@@ -77,7 +81,7 @@ function NodeDetail({ node, onClose }: { node: NetworkNode; onClose: () => void 
             <div>
               <h3 className="text-sm font-bold text-white">{node.name}</h3>
               <p className="text-xs" style={{ color: "#526080" }}>
-                {node.alias}
+                {node.alias || "No Alias"}
               </p>
             </div>
           </div>
@@ -231,9 +235,9 @@ function NodeDetail({ node, onClose }: { node: NetworkNode; onClose: () => void 
           </p>
           <div className="space-y-2">
             {connectedNodes.map((cn, i) => {
-              const cTier   = TIER_CONFIG[cn.tier];
-              const cStatus = STATUS_CONFIG[cn.status];
-              const edge    = edges[i];
+              const cTier   = TIER_CONFIG[cn.tier] || TIER_CONFIG[3];
+              const cStatus = STATUS_CONFIG[cn.status] || STATUS_CONFIG["unknown"];
+              const edge    = nodeEdges[i];
               return (
                 <div
                   key={cn.id}
@@ -255,7 +259,7 @@ function NodeDetail({ node, onClose }: { node: NetworkNode; onClose: () => void 
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-white truncate">{cn.name}</p>
                     <p className="text-[10px] truncate" style={{ color: "#526080" }}>
-                      {edge.type} · {edge.strength}
+                      {String(edge?.type || "")} · {String(edge?.strength || "")}
                     </p>
                   </div>
                   <span
@@ -278,6 +282,71 @@ export default function NetworkGraph() {
   const [hovered,  setHovered]    = useState<string | null>(null);
   const [search,   setSearch]     = useState("");
   const [filterTier, setFilterTier] = useState<string>("all");
+  const [nodes, setNodes] = useState<NetworkNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real data from backend
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const cases = await searchCases({ page: 1, page_size: 1 });
+        if (cases.items.length > 0) {
+          const latestCase = cases.items[0];
+          const graphData = await ai.graph(latestCase.case_master_id);
+          
+          const rawNodes = graphData.nodes || [];
+          const rawEdges = graphData.edges || [];
+
+          // Map backend nodes to UI nodes
+          const mappedNodes: NetworkNode[] = rawNodes.map((n: Record<string, unknown>, i: number) => {
+            const isAccused = n.group === "Accused";
+            const meta = (n.metadata || {}) as Record<string, unknown>;
+            
+            // Simple circular layout mapping
+            const angle = (i / rawNodes.length) * 2 * Math.PI;
+            const r = 200;
+            const x = W / 2 + r * Math.cos(angle);
+            const y = H / 2 + r * Math.sin(angle);
+
+            return {
+              id: String(n.id),
+              name: String(n.label || n.id),
+              alias: String(meta.alias || ""),
+              tier: (isAccused ? 1 : (n.group === "Victim" ? 2 : 3)) as 1 | 2 | 3,
+              status: (isAccused ? "wanted" : "unknown") as NodeStatus,
+              role: String(n.group),
+              bio: String(meta.brief_facts || "Entity extracted from case documents."),
+              threatScore: isAccused ? 85 : 30,
+              lastLocation: String(meta.address || "Unknown"),
+              state: "Karnataka",
+              crimeTypes: ["Criminal Network"],
+              linkedFIRs: [],
+              x,
+              y,
+            };
+          });
+
+          const mappedEdges = rawEdges.map((e: Record<string, unknown>) => ({
+            id: e.id,
+            source: e.source_id,
+            target: e.target_id,
+            type: "operational",
+            strength: 80,
+            label: e.relationship_type,
+          }));
+
+          setNodes(mappedNodes);
+          setEdges(mappedEdges);
+        }
+      } catch (err) {
+        console.error("Failed to load network graph:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
 
   const activeId = selected ?? hovered;
 
@@ -285,24 +354,24 @@ export default function NetworkGraph() {
   const connectedIds = useMemo(() => {
     if (!activeId) return new Set<string>();
     const s = new Set<string>();
-    NETWORK_EDGES.forEach((e) => {
+    edges.forEach((e) => {
       if (e.source === activeId) s.add(e.target);
       if (e.target === activeId) s.add(e.source);
     });
     return s;
-  }, [activeId]);
+  }, [activeId, edges]);
 
   // Filter nodes for left panel
   const filteredNodes = useMemo(() => {
-    return NETWORK_NODES.filter((n) => {
+    return nodes.filter((n) => {
       const q = search.toLowerCase();
       const matchQ = !q || n.name.toLowerCase().includes(q) || n.role.toLowerCase().includes(q);
       const matchTier = filterTier === "all" || String(n.tier) === filterTier;
       return matchQ && matchTier;
     }).sort((a, b) => b.threatScore - a.threatScore);
-  }, [search, filterTier]);
+  }, [nodes, search, filterTier]);
 
-  const selectedNode = NETWORK_NODES.find((n) => n.id === selected) ?? null;
+  const selectedNode = nodes.find((n) => n.id === selected) ?? null;
 
   // Edge colour based on type
   const edgeColor: Record<string, string> = {
@@ -312,9 +381,16 @@ export default function NetworkGraph() {
     family:        "#ff8c00",
   };
 
+  if (loading) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center -m-6" style={{ background: "#080b12" }}>
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#0070f3" }} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-4rem)] -m-6 overflow-hidden">
-
       {/* ═══ LEFT: Criminal List ═══ */}
       <div
         className="hidden lg:flex w-[260px] shrink-0 flex-col"
@@ -371,8 +447,8 @@ export default function NetworkGraph() {
         {/* Node list */}
         <div className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
           {filteredNodes.map((node) => {
-            const tier   = TIER_CONFIG[node.tier];
-            const status = STATUS_CONFIG[node.status];
+            const tier   = TIER_CONFIG[node.tier] || TIER_CONFIG[3];
+            const status = STATUS_CONFIG[node.status] || STATUS_CONFIG["unknown"];
             const isActive = selected === node.id;
 
             return (
@@ -464,7 +540,7 @@ export default function NetworkGraph() {
           <div className="flex items-center gap-3">
             <Users className="w-4 h-4" style={{ color: "#526080" }} />
             <span className="text-sm font-bold text-white">
-              Arun Singh Criminal Network
+              Global Criminal Network
             </span>
             <span
               className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
@@ -473,7 +549,7 @@ export default function NetworkGraph() {
                 color: "#ff2d55",
               }}
             >
-              {NETWORK_NODES.filter((n) => n.status === "wanted").length} Wanted
+              {nodes.filter((n) => n.status === "wanted").length} Wanted
             </span>
             <span
               className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
@@ -482,7 +558,7 @@ export default function NetworkGraph() {
                 color: "#30d158",
               }}
             >
-              {NETWORK_NODES.filter((n) => n.status === "arrested").length} Arrested
+              {nodes.filter((n) => n.status === "arrested").length} Arrested
             </span>
           </div>
           <p className="text-xs" style={{ color: "#2a3a55" }}>
@@ -521,11 +597,12 @@ export default function NetworkGraph() {
             </defs>
 
             {/* ── Edges ── */}
-            {NETWORK_EDGES.map((edge) => {
-              const src = NETWORK_NODES.find((n) => n.id === edge.source)!;
-              const tgt = NETWORK_NODES.find((n) => n.id === edge.target)!;
-              const cfg = EDGE_CONFIG[edge.strength];
-              const color = edgeColor[edge.type];
+            {edges.map((edge) => {
+              const src = nodes.find((n) => n.id === edge.source);
+              const tgt = nodes.find((n) => n.id === edge.target);
+              if (!src || !tgt) return null;
+              const cfg = (EDGE_CONFIG as Record<string, { width: number; opacity: number; dash: string }>)[String(edge.strength || "medium")] || EDGE_CONFIG["medium"];
+              const color = (edgeColor as Record<string, string>)[String(edge.type || "operational")] || edgeColor["operational"];
 
               const isHighlighted =
                 activeId &&
@@ -560,9 +637,9 @@ export default function NetworkGraph() {
             })}
 
             {/* ── Nodes ── */}
-            {NETWORK_NODES.map((node) => {
-              const tier   = TIER_CONFIG[node.tier];
-              const status = STATUS_CONFIG[node.status];
+            {nodes.map((node) => {
+              const tier   = TIER_CONFIG[node.tier] || TIER_CONFIG[3];
+              const status = STATUS_CONFIG[node.status] || STATUS_CONFIG["unknown"];
               const r      = tier.radius;
 
               const isSelected   = selected === node.id;
@@ -684,32 +761,32 @@ export default function NetworkGraph() {
           }}
         >
           <span>
-            <strong className="text-white">{NETWORK_NODES.length}</strong> nodes
+            <strong className="text-white">{nodes.length}</strong> nodes
           </span>
           <span>
-            <strong className="text-white">{NETWORK_EDGES.length}</strong> connections
+            <strong className="text-white">{edges.length}</strong> connections
           </span>
           <span>
             <strong style={{ color: "#ff2d55" }}>
-              {NETWORK_NODES.filter((n) => n.status === "wanted").length}
+              {nodes.filter((n) => n.status === "wanted").length}
             </strong>{" "}
             still at large
           </span>
           <span>
             <strong style={{ color: "#30d158" }}>
-              {NETWORK_NODES.filter((n) => n.status === "arrested").length}
+              {nodes.filter((n) => n.status === "arrested").length}
             </strong>{" "}
             arrested
           </span>
           <span>
             <strong style={{ color: "#ff8c00" }}>
-              {NETWORK_NODES.filter((n) => n.status === "unknown").length}
+              {nodes.filter((n) => n.status === "unknown").length}
             </strong>{" "}
             unknown
           </span>
           <span className="ml-auto flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" style={{ color: "#ff2d55" }} />
-            Active Interpol Red Notice: Arun Singh
+            Active Interpol Red Notice
           </span>
         </div>
       </div>
@@ -719,6 +796,8 @@ export default function NetworkGraph() {
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
+            nodes={nodes}
+            edges={edges}
             onClose={() => setSelected(null)}
           />
         )}

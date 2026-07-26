@@ -28,8 +28,12 @@ class ResponseFactory:
         provider_used: Optional[str] = None,
         confidence: float = 0.0,
         latency_ms: Optional[int] = None,
+        citations: Optional[list[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> CopilotResponse:
+        response_metadata = metadata.copy() if metadata else {}
+        if citations is not None:
+            response_metadata.setdefault("citations", citations)
         return CopilotResponse(
             session_id=session_id,
             case_id=case_id,
@@ -40,7 +44,8 @@ class ResponseFactory:
             confidence=confidence,
             provider_used=provider_used,
             latency_ms=latency_ms,
-            metadata=metadata or {},
+            citations=citations or [],
+            metadata=response_metadata,
         )
 
     @staticmethod
@@ -58,4 +63,5 @@ class ResponseFactory:
             plan=plan,
             agent_state=AgentState.FAILED,
             confidence=0.0,
+            citations=[],
         )

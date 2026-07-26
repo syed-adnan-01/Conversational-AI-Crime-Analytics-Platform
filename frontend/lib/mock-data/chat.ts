@@ -6,6 +6,9 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   sources?: string[];
+  provider?: string;
+  citations?: string[];
+  confidence?: number;
 }
 
 export interface ChatSession {
@@ -56,36 +59,62 @@ export const mockSessions: ChatSession[] = [
   },
 ];
 
-// ── Quick Prompts ─────────────────────────────────────────────────────────
-
 export const quickPrompts = [
   {
     id: "q1",
     icon: "FileText",
     label: "Analyse FIR-2024-00847",
     description: "Full AI risk assessment & recommendations",
-    query: "Analyse FIR-2024-00847 and provide a complete risk assessment with recommended actions.",
+    query: "Analyse FIR-2024-00847",
   },
   {
     id: "q2",
-    icon: "MapPin",
-    label: "Today's crime hotspots",
-    description: "High-risk zones across all districts",
-    query: "Show me the current crime hotspots across all districts for today.",
+    icon: "Network",
+    label: "Find suspect connections",
+    description: "Map known associates",
+    query: "Find suspect connections",
   },
   {
     id: "q3",
-    icon: "Network",
-    label: "Map criminal network",
-    description: "Rajan Mehta's known associates",
-    query: "Map the full criminal network connected to Rajan Mehta and identify key associates.",
+    icon: "FileText",
+    label: "Applicable IPC sections",
+    description: "Legal opinion based on evidence",
+    query: "Applicable IPC sections",
   },
   {
     id: "q4",
+    icon: "FileText",
+    label: "Generate investigation summary",
+    description: "Key findings from the case",
+    query: "Generate investigation summary",
+  },
+  {
+    id: "q5",
+    icon: "MapPin",
+    label: "Evidence collected",
+    description: "List all digital and physical artifacts",
+    query: "Evidence collected",
+  },
+  {
+    id: "q6",
+    icon: "Clock",
+    label: "Timeline of events",
+    description: "Chronological sequence",
+    query: "Timeline of events",
+  },
+  {
+    id: "q7",
+    icon: "FileText",
+    label: "Generate chargesheet draft",
+    description: "Draft chargesheet based on FIR",
+    query: "Generate chargesheet draft",
+  },
+  {
+    id: "q8",
     icon: "TrendingUp",
-    label: "Predict tomorrow's risks",
-    description: "AI-powered crime forecast",
-    query: "Predict crime risk areas for tomorrow based on current patterns and historical data.",
+    label: "Predict next investigation step",
+    description: "AI recommended next actions",
+    query: "Predict next investigation step",
   },
 ];
 

@@ -1,1 +1,3 @@
-from .service import UploadService
+from .upload_router import router
+
+__all__ = ["router"]

@@ -117,6 +117,7 @@ class CopilotResponse(BaseModel):
     confidence: float = 0.0
     provider_used: Optional[str] = None
     latency_ms: Optional[int] = None
+    citations: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -22,6 +22,7 @@ from app.ai.routes.retrieval import router as ai_retrieval_router
 from app.ai.routes.prompting import router as ai_prompting_router
 from app.ai.routes.llm import router as ai_llm_router
 from app.ai.routes.copilot import router as ai_copilot_router
+from app.ai.routes.copilot_kb import router as ai_copilot_kb_router
 from app.ai.routes.graph import router as ai_graph_router
 from app.ai.routes.agents import router as ai_agents_router
 from app.ai.routes.decision import router as ai_decision_router
@@ -30,10 +31,10 @@ from app.security.routes import router as security_router
 from app.ai.governance.routes import router as ai_governance_router
 from app.application.dashboard.routes import router as dashboard_router
 from app.application.analytics.routes import router as application_analytics_router
-from app.application.notifications.routes import router as application_notifications_router
+from app.application.notifications.notification_router import router as application_notifications_router
 from app.application.reports.routes import router as application_reports_router
 from app.application.admin.routes import router as application_admin_router
-from app.application.uploads.routes import router as application_uploads_router
+from app.application.uploads.upload_router import router as application_uploads_router
 ai_investigation_router = import_module("app.ai.routes.investigation").router
 from app.api.routes.config import router as config_router
 from app.api.routes.health import router as health_router
@@ -66,8 +67,6 @@ api_router.include_router(
     tags=["Configuration"],
 )
 
-api_router.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])
-api_router.include_router(notifications_router, prefix="/notifications", tags=["Notifications"])
 api_router.include_router(users_router, prefix="/users", tags=["User Administration"])
 
 # Authentication Routes
@@ -202,6 +201,12 @@ api_router.include_router(
     tags=["AI Copilot"],
 )
 
+api_router.include_router(
+    ai_copilot_kb_router,
+    prefix="/ai/copilot/kb",
+    tags=["AI Copilot Knowledge Base"],
+)
+
 # AI Investigation Intelligence Routes
 api_router.include_router(
     ai_investigation_router,
@@ -242,7 +247,7 @@ api_router.include_router(security_router, prefix="/security", tags=["Security"]
 api_router.include_router(ai_governance_router, prefix="/ai/governance", tags=["AI Governance"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(application_analytics_router, prefix="/analytics", tags=["Analytics"])
-api_router.include_router(application_notifications_router, prefix="/application/notifications", tags=["Notifications"])
+api_router.include_router(application_notifications_router, tags=["Notifications"])
 api_router.include_router(application_reports_router, prefix="/reports", tags=["Reports"])
 api_router.include_router(application_admin_router, prefix="/admin", tags=["Administration"])
-api_router.include_router(application_uploads_router, prefix="/upload", tags=["Uploads"])
+api_router.include_router(application_uploads_router, tags=["Uploads"])

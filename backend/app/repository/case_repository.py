@@ -202,29 +202,33 @@ class CaseRepository:
                 stmt = stmt.where(CaseMasterORM.crimeno.ilike(f"%{options.crime_no}%"))
             if options.case_no:
                 stmt = stmt.where(CaseMasterORM.caseno.ilike(f"%{options.case_no}%"))
-            if options.status:
-                status_id = getattr(options.status, "value", str(options.status))
+            status_val = getattr(options, "status", getattr(options, "case_status_id", None))
+            if status_val is not None:
+                status_id = getattr(status_val, "value", str(status_val))
                 try:
                     stmt = stmt.where(CaseMasterORM.casestatusid == int(status_id))
                 except ValueError:
                     pass
-            if options.category:
-                cat_id = getattr(options.category, "value", str(options.category))
+            cat_val = getattr(options, "category", getattr(options, "case_category_id", None))
+            if cat_val is not None:
+                cat_id = getattr(cat_val, "value", str(cat_val))
                 try:
                     stmt = stmt.where(CaseMasterORM.casecategoryid == int(cat_id))
                 except ValueError:
                     pass
-            if options.io_emp_id:
+            io_val = getattr(options, "io_emp_id", getattr(options, "police_person_id", None))
+            if io_val is not None:
                 try:
-                    stmt = stmt.where(CaseMasterORM.policepersonid == int(options.io_emp_id))
+                    stmt = stmt.where(CaseMasterORM.policepersonid == int(io_val))
                 except ValueError:
                     pass
             if options.date_from:
                 stmt = stmt.where(CaseMasterORM.crimeregistereddate >= options.date_from)
             if options.date_to:
                 stmt = stmt.where(CaseMasterORM.crimeregistereddate <= options.date_to)
-            if options.search_term:
-                term = f"%{options.search_term}%"
+            search_val = getattr(options, "search_term", getattr(options, "brief_facts", None))
+            if search_val:
+                term = f"%{search_val}%"
                 stmt = stmt.where(
                     (CaseMasterORM.crimeno.ilike(term))
                     | (CaseMasterORM.caseno.ilike(term))
@@ -237,11 +241,12 @@ class CaseRepository:
             # Sorting
             if options.sort_by:
                 sort_col = CaseMasterORM.crimeregistereddate
-                if options.sort_by == SortField.CRIME_NO:
+                sort_val = getattr(options.sort_by, "value", str(options.sort_by))
+                if sort_val in ("crime_no", "crime_number"):
                     sort_col = CaseMasterORM.crimeno
-                elif options.sort_by == SortField.INCIDENT_DATE:
+                elif sort_val == "incident_date":
                     sort_col = CaseMasterORM.incidentfromdate
-                elif options.sort_by == SortField.CREATED_DATE:
+                elif sort_val in ("registered_date", "created_date"):
                     sort_col = CaseMasterORM.crimeregistereddate
 
                 if options.sort_order == SortOrder.DESC:

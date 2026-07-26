@@ -1,11 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { AlertTriangle, Zap, Info, Clock, ExternalLink } from "lucide-react";
-import { recentAlerts } from "@/lib/mock-data/dashboard";
+import { getAlerts, AlertData } from "@/lib/services/dashboard";
 import { formatRelativeTime } from "@/lib/utils";
 
-const TYPE_CONFIG = {
+const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; bg: string; border: string; dot: string; label: string }> = {
   critical: {
     icon: AlertTriangle,
     color: "#ff2d55",
@@ -14,15 +15,23 @@ const TYPE_CONFIG = {
     dot: "#ff2d55",
     label: "CRITICAL",
   },
-  warning: {
+  high: {
     icon: Zap,
     color: "#ff8c00",
     bg: "rgba(255,140,0,0.08)",
     border: "rgba(255,140,0,0.2)",
     dot: "#ff8c00",
+    label: "HIGH",
+  },
+  medium: {
+    icon: Zap,
+    color: "#ffd60a",
+    bg: "rgba(255,214,10,0.08)",
+    border: "rgba(255,214,10,0.2)",
+    dot: "#ffd60a",
     label: "WARNING",
   },
-  info: {
+  low: {
     icon: Info,
     color: "#0070f3",
     bg: "rgba(0,112,243,0.08)",
@@ -33,9 +42,19 @@ const TYPE_CONFIG = {
 };
 
 export default function AlertsFeed() {
+  const [alerts, setAlerts] = useState<AlertData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getAlerts()
+      .then(setAlerts)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div
-      className="rounded-xl p-5 h-full flex flex-col"
+      className="rounded-xl p-5 h-full flex flex-col relative"
       style={{
         background: "#0d1322",
         border: "1px solid rgba(255,255,255,0.06)",
@@ -55,15 +74,25 @@ export default function AlertsFeed() {
             <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: "#ff2d55" }} />
           </span>
           <span className="text-xs" style={{ color: "#ff2d55" }}>
-            {recentAlerts.filter((a) => a.actionRequired).length} urgent
+            {alerts.filter((a) => !a.read).length} unread
           </span>
         </div>
       </div>
 
       {/* Alert list */}
-      <div className="flex-1 space-y-2.5 overflow-y-auto pr-1">
-        {recentAlerts.map((alert, i) => {
-          const cfg = TYPE_CONFIG[alert.type] ?? TYPE_CONFIG.info;
+      <div className="flex-1 space-y-2.5 overflow-y-auto pr-1 relative">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#0d1322]/80 z-10">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2b91ff]" />
+          </div>
+        )}
+        {!loading && alerts.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <p style={{ color: "#526080" }} className="text-sm">No new alerts.</p>
+          </div>
+        )}
+        {alerts.map((alert, i) => {
+          const cfg = TYPE_CONFIG[alert.severity] ?? TYPE_CONFIG.low;
           const Icon = cfg.icon;
 
           return (
@@ -101,12 +130,12 @@ export default function AlertsFeed() {
                     >
                       {cfg.label}
                     </span>
-                    {alert.actionRequired && (
+                    {!alert.read && (
                       <span
                         className="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded"
                         style={{ background: "rgba(255,45,85,0.1)", color: "#ff2d55" }}
                       >
-                        Action Required
+                        New
                       </span>
                     )}
                   </div>
@@ -115,24 +144,14 @@ export default function AlertsFeed() {
                     {alert.title}
                   </p>
                   <p className="text-xs leading-snug line-clamp-2" style={{ color: "#526080" }}>
-                    {alert.message}
+                    {alert.description}
                   </p>
 
                   <div className="flex items-center gap-3 mt-1.5">
                     <div className="flex items-center gap-1" style={{ color: "#2a3a55" }}>
                       <Clock className="w-2.5 h-2.5" />
-                      <span className="text-[10px]">{formatRelativeTime(alert.timestamp)}</span>
+                      <span className="text-[10px]">{formatRelativeTime(alert.time)}</span>
                     </div>
-                    <span className="text-[10px]" style={{ color: "#2a3a55" }}>
-                      {alert.district}
-                    </span>
-                    <span
-                      className="ml-auto text-[10px] flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ color: cfg.color }}
-                    >
-                      <ExternalLink className="w-2.5 h-2.5" />
-                      {alert.linkedFIR}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -150,7 +169,7 @@ export default function AlertsFeed() {
           onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#0070f3")}
           onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#2a3a55")}
         >
-          View all {recentAlerts.length} alerts →
+          View all {alerts.length} alerts →
         </button>
       </div>
     </div>

@@ -1,0 +1,10 @@
+{
+  "command": "bash start.sh",
+  "build_path": ".",
+  "stack": "python_3_11",
+  "memory": 512,
+  "env_variables": {},
+  "scripts": {
+    "install": "pip install -r requirements.txt"
+  }
+}

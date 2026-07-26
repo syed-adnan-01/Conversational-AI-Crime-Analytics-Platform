@@ -1,25 +1,37 @@
 "use client";
 
-import { recentFIRs } from "@/lib/mock-data/dashboard";
+import { useEffect, useState } from "react";
+import { getRecentCases, RecentCase } from "@/lib/services/dashboard";
 import { formatRelativeTime } from "@/lib/utils";
-import type { RiskLevel, CrimeStatus } from "@/types";
 
-const RISK_CONFIG: Record<RiskLevel, { label: string; color: string; bg: string }> = {
+const RISK_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   critical: { label: "Critical", color: "#ff2d55", bg: "rgba(255,45,85,0.12)" },
   high:     { label: "High",     color: "#ff8c00", bg: "rgba(255,140,0,0.12)" },
   medium:   { label: "Medium",   color: "#ffd60a", bg: "rgba(255,214,10,0.12)" },
   low:      { label: "Low",      color: "#30d158", bg: "rgba(48,209,88,0.12)" },
+  default:  { label: "Unknown",  color: "#526080", bg: "rgba(82,96,128,0.12)" },
 };
 
-const STATUS_CONFIG: Record<CrimeStatus, { label: string; color: string; bg: string }> = {
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   open:          { label: "Open",          color: "#2b91ff", bg: "rgba(43,145,255,0.1)" },
   investigating: { label: "Investigating", color: "#ffd60a", bg: "rgba(255,214,10,0.1)" },
   closed:        { label: "Closed",        color: "#30d158", bg: "rgba(48,209,88,0.1)" },
   escalated:     { label: "Escalated",     color: "#ff2d55", bg: "rgba(255,45,85,0.1)" },
   pending:       { label: "Pending",       color: "#526080", bg: "rgba(82,96,128,0.1)" },
+  default:       { label: "Unknown",       color: "#526080", bg: "rgba(82,96,128,0.1)" },
 };
 
 export default function RecentFIRsTable() {
+  const [recentFIRs, setRecentFIRs] = useState<RecentCase[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getRecentCases()
+      .then(setRecentFIRs)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div
       className="rounded-xl overflow-hidden"
@@ -52,7 +64,17 @@ export default function RecentFIRsTable() {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto min-h-[200px] relative">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#0d1322]/80 z-10">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2b91ff]" />
+          </div>
+        )}
+        {!loading && recentFIRs.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <p style={{ color: "#526080" }} className="text-sm">No recent FIRs found.</p>
+          </div>
+        )}
         <table className="w-full text-xs">
           <thead>
             <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
@@ -69,13 +91,15 @@ export default function RecentFIRsTable() {
           </thead>
           <tbody>
             {recentFIRs.map((fir, i) => {
-              const risk   = RISK_CONFIG[fir.riskLevel];
-              const status = STATUS_CONFIG[fir.status];
+              const riskKey = fir.priority ? fir.priority.toLowerCase() : "default";
+              const risk   = RISK_CONFIG[riskKey] || RISK_CONFIG.default;
+              const statusKey = fir.status ? fir.status.toLowerCase() : "default";
+              const status = STATUS_CONFIG[statusKey] || STATUS_CONFIG.default;
               const isLast = i === recentFIRs.length - 1;
 
               return (
                 <tr
-                  key={fir.id}
+                  key={fir.case_id}
                   className="group transition-colors cursor-pointer"
                   style={{
                     borderBottom: isLast ? "none" : "1px solid rgba(255,255,255,0.04)",
@@ -90,21 +114,21 @@ export default function RecentFIRsTable() {
                   {/* FIR No */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="font-mono font-semibold" style={{ color: "#2b91ff" }}>
-                      {fir.firNumber}
+                      {fir.fir || fir.case_number}
                     </span>
                   </td>
 
                   {/* Title */}
                   <td className="px-4 py-3 max-w-[180px]">
-                    <span className="text-white font-medium line-clamp-1">{fir.title}</span>
+                    <span className="text-white font-medium line-clamp-1">{fir.case_number}</span>
                     <span className="block text-[10px] mt-0.5" style={{ color: "#2a3a55" }}>
-                      {fir.assignedTo}
+                      {fir.officer || "Unassigned"}
                     </span>
                   </td>
 
                   {/* Crime Type */}
                   <td className="px-4 py-3 whitespace-nowrap" style={{ color: "#526080" }}>
-                    {fir.crimeType}
+                    {fir.fir ? "FIR" : "General"}
                   </td>
 
                   {/* Risk */}
@@ -129,7 +153,7 @@ export default function RecentFIRsTable() {
 
                   {/* District */}
                   <td className="px-4 py-3 whitespace-nowrap" style={{ color: "#526080" }}>
-                    {fir.district}
+                    {fir.district || "-"}
                   </td>
 
                   {/* AI Score */}
@@ -142,11 +166,11 @@ export default function RecentFIRsTable() {
                         <div
                           className="h-full rounded-full"
                           style={{
-                            width: `${fir.aiScore}%`,
+                            width: `${fir.risk_score || 0}%`,
                             background:
-                              fir.aiScore >= 80
+                              (fir.risk_score || 0) >= 80
                                 ? "#ff2d55"
-                                : fir.aiScore >= 60
+                                : (fir.risk_score || 0) >= 60
                                 ? "#ff8c00"
                                 : "#30d158",
                           }}
@@ -156,21 +180,21 @@ export default function RecentFIRsTable() {
                         className="font-mono font-bold text-[11px]"
                         style={{
                           color:
-                            fir.aiScore >= 80
+                            (fir.risk_score || 0) >= 80
                               ? "#ff2d55"
-                              : fir.aiScore >= 60
+                              : (fir.risk_score || 0) >= 60
                               ? "#ff8c00"
                               : "#30d158",
                         }}
                       >
-                        {fir.aiScore}
+                        {fir.risk_score || 0}
                       </span>
                     </div>
                   </td>
 
                   {/* Reported */}
                   <td className="px-4 py-3 whitespace-nowrap" style={{ color: "#2a3a55" }}>
-                    {formatRelativeTime(fir.reportedAt)}
+                    {fir.created_date ? formatRelativeTime(fir.created_date) : "-"}
                   </td>
                 </tr>
               );

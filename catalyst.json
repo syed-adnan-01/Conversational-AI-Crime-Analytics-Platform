@@ -1,0 +1,15 @@
+{
+  "functions": {
+    "targets": [
+      "placeholder"
+    ],
+    "ignore": [],
+    "source": "functions"
+  },
+  "appsail": [
+    {
+      "source": "backend",
+      "name": "crimesphere-backend"
+    }
+  ]
+}

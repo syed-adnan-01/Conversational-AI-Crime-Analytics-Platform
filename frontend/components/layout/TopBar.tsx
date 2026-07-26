@@ -10,8 +10,8 @@ import {
   Shield,
   Wifi,
 } from "lucide-react";
-import { recentAlerts } from "@/lib/mock-data/dashboard";
 import { formatRelativeTime } from "@/lib/utils";
+import { notificationsService, NotificationResponse } from "@/lib/services/notifications";
 
 // Map pathnames to readable page titles
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -29,13 +29,19 @@ export default function TopBar() {
   const pathname = usePathname();
   const [currentTime, setCurrentTime] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
-  const [unreadCount] = useState(
-    recentAlerts.filter((a) => a.actionRequired).length
-  );
+  const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const pageInfo = PAGE_TITLES[pathname] ?? {
     title: "CrimeSphere AI",
     subtitle: "National Crime Intelligence Platform",
+  };
+
+  const fetchNotifications = () => {
+    notificationsService.getNotifications().then(res => {
+      setNotifications(res);
+      setUnreadCount(res.filter(r => !r.read).length);
+    }).catch(err => console.error(err));
   };
 
   // Live clock
@@ -57,6 +63,11 @@ export default function TopBar() {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // Fetch notifications
+  useEffect(() => {
+    fetchNotifications();
   }, []);
 
   // Close dropdown on outside click
@@ -186,30 +197,35 @@ export default function TopBar() {
                 </span>
               </div>
               <div className="max-h-72 overflow-y-auto">
-                {recentAlerts.slice(0, 4).map((alert) => (
+                {notifications.slice(0, 4).map((alert) => (
                   <div
                     key={alert.id}
                     className="px-4 py-3 transition-colors cursor-pointer"
                     style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
                     onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.03)")}
                     onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.background = "transparent")}
+                    onClick={() => {
+                      if (!alert.read) {
+                        notificationsService.markRead(alert.id).then(() => fetchNotifications());
+                      }
+                    }}
                   >
                     <div className="flex items-start gap-2.5">
                       <span
                         className="w-2 h-2 rounded-full mt-1.5 shrink-0"
                         style={{
                           background:
-                            alert.type === "critical" ? "#ff2d55" :
-                            alert.type === "warning"  ? "#ff8c00" : "#0070f3",
+                            alert.priority === "CRITICAL" ? "#ff2d55" :
+                            alert.priority === "HIGH"  ? "#ff8c00" : "#0070f3",
                         }}
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-white truncate">{alert.title}</p>
+                        <p className={`text-xs ${alert.read ? 'text-gray-400' : 'font-semibold text-white'} truncate`}>{alert.title}</p>
                         <p className="text-xs mt-0.5 truncate" style={{ color: "#526080" }}>
                           {alert.message}
                         </p>
                         <p className="text-[10px] mt-1" style={{ color: "#2a3a55" }}>
-                          {formatRelativeTime(alert.timestamp)} · {alert.district}
+                          {formatRelativeTime(alert.timestamp)}
                         </p>
                       </div>
                     </div>
@@ -220,8 +236,12 @@ export default function TopBar() {
                 className="px-4 py-2.5 text-center"
                 style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
               >
-                <button className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                  View all alerts →
+                <button 
+                  onClick={() => {
+                    notificationsService.markAllRead().then(() => fetchNotifications());
+                  }}
+                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                  Mark all as read
                 </button>
               </div>
             </div>

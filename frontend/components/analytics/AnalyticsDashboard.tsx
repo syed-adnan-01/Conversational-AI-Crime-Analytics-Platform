@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart,
@@ -23,16 +23,8 @@ import {
   Activity,
   Filter,
 } from "lucide-react";
-import {
-  MONTHLY_TREND,
-  CRIME_TYPE_BREAKDOWN,
-  STATUS_DISTRIBUTION,
-  TOP_DISTRICTS,
-  YOY_STATS,
-  HEATMAP_DATA,
-  DAYS_OF_WEEK,
-  HOURS,
-} from "@/lib/mock-data/analytics";
+
+import { analytics, MonthlyTrend } from "@/lib/services/analytics";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,180 +106,79 @@ function Card({ title, subtitle, children, className = "" }: {
   );
 }
 
-// ─── KPI card ─────────────────────────────────────────────────────────────────
-function KPICard({ stat, index }: { stat: typeof YOY_STATS[0]; index: number }) {
-  const delta = stat.current - stat.previous;
-  const pct   = Math.abs(((delta) / stat.previous) * 100).toFixed(1);
-  const up    = delta > 0;
-  const good  = stat.lowerIsBetter ? !up : up;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.07 }}
-      className="rounded-xl p-5"
-      style={{ background: "#0d1322", border: "1px solid rgba(255,255,255,0.06)" }}
-    >
-      <p className="text-xs mb-1" style={{ color: "#526080" }}>{stat.label}</p>
-      <div className="flex items-end justify-between">
-        <p className="text-2xl font-bold text-white tabular-nums">
-          {stat.current.toLocaleString("en-IN")}{stat.unit}
-        </p>
-        <div
-          className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
-          style={{
-            background: good ? "rgba(48,209,88,0.1)" : "rgba(255,45,85,0.1)",
-            color: good ? "#30d158" : "#ff2d55",
-          }}
-        >
-          {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-          {pct}%
-        </div>
-      </div>
-      <p className="text-[10px] mt-1" style={{ color: "#2a3a55" }}>
-        vs {stat.previous.toLocaleString("en-IN")}{stat.unit} last year
-      </p>
-    </motion.div>
-  );
-}
-
-// ─── Heatmap ──────────────────────────────────────────────────────────────────
-function CrimeHeatmap() {
-  const [hovered, setHovered] = useState<{ d: number; h: number } | null>(null);
-
-  return (
-    <Card title="Crime Intensity Heatmap" subtitle="Day of week × Hour of day · Jan–Jun 2024">
-      <div className="overflow-x-auto">
-        {/* Hour labels */}
-        <div className="flex mb-1 pl-10">
-          {HOURS.map((h, i) => (
-            <div
-              key={i}
-              className="flex-1 text-center text-[9px] shrink-0"
-              style={{
-                color: i % 3 === 0 ? "#526080" : "transparent",
-                minWidth: 24,
-              }}
-            >
-              {h}
-            </div>
-          ))}
-        </div>
-
-        {/* Grid */}
-        {HEATMAP_DATA.map((dayData, d) => (
-          <div key={d} className="flex items-center mb-1">
-            <span
-              className="text-[10px] w-10 shrink-0 text-right pr-2"
-              style={{ color: "#526080" }}
-            >
-              {DAYS_OF_WEEK[d]}
-            </span>
-            {dayData.map((val, h) => {
-              const isHov = hovered?.d === d && hovered?.h === h;
-              return (
-                <div
-                  key={h}
-                  className="flex-1 rounded-sm transition-all cursor-default"
-                  style={{
-                    background: heatColor(val),
-                    minWidth: 22,
-                    height: 22,
-                    margin: "0 1px",
-                    outline: isHov ? "1.5px solid rgba(255,255,255,0.5)" : "none",
-                    transform: isHov ? "scale(1.3)" : "scale(1)",
-                    transition: "transform 0.1s, outline 0.1s",
-                    zIndex: isHov ? 10 : 0,
-                    position: "relative",
-                  }}
-                  onMouseEnter={() => setHovered({ d, h })}
-                  onMouseLeave={() => setHovered(null)}
-                  title={`${DAYS_OF_WEEK[d]} ${HOURS[h]}: ${val} incidents`}
-                />
-              );
-            })}
-          </div>
-        ))}
-
-        {/* Colour scale legend */}
-        <div className="flex items-center gap-2 mt-3 justify-end">
-          <span className="text-[10px]" style={{ color: "#2a3a55" }}>Low</span>
-          {[0, 2, 4, 6, 8, 10].map((v) => (
-            <div
-              key={v}
-              className="w-5 h-4 rounded-sm"
-              style={{ background: heatColor(v) }}
-            />
-          ))}
-          <span className="text-[10px]" style={{ color: "#2a3a55" }}>High</span>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-// ─── Top Districts ────────────────────────────────────────────────────────────
-function TopDistrictsChart() {
-  const max = Math.max(...TOP_DISTRICTS.map((d) => d.crimes));
-
-  return (
-    <Card title="Top Districts by Crime Volume" subtitle="Resolution rate shown as overlay">
-      <div className="space-y-3">
-        {TOP_DISTRICTS.map((d, i) => (
-          <motion.div
-            key={d.name}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.06 }}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-white truncate max-w-[140px]">{d.name}</span>
-              <div className="flex items-center gap-2">
-                <span
-                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                  style={{
-                    background: d.rate >= 75 ? "rgba(48,209,88,0.12)" : "rgba(255,140,0,0.12)",
-                    color: d.rate >= 75 ? "#30d158" : "#ff8c00",
-                  }}
-                >
-                  {d.rate}% resolved
-                </span>
-                <span className="text-xs font-bold tabular-nums" style={{ color: "#526080" }}>
-                  {d.crimes}
-                </span>
-              </div>
-            </div>
-            {/* Bar */}
-            <div className="relative h-2 rounded-full overflow-hidden"
-              style={{ background: "rgba(255,255,255,0.06)" }}>
-              <motion.div
-                className="absolute left-0 top-0 h-full rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${(d.crimes / max) * 100}%` }}
-                transition={{ duration: 0.8, delay: i * 0.06, ease: "easeOut" }}
-                style={{ background: d.color }}
-              />
-              {/* Resolution overlay */}
-              <motion.div
-                className="absolute left-0 top-0 h-full rounded-full opacity-30"
-                initial={{ width: 0 }}
-                animate={{ width: `${(d.resolved / max) * 100}%` }}
-                transition={{ duration: 0.8, delay: i * 0.06 + 0.2, ease: "easeOut" }}
-                style={{ background: "#30d158" }}
-              />
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function AnalyticsDashboard() {
-  const [activeFilter, setActiveFilter] = useState("6M");
-  const total = CRIME_TYPE_BREAKDOWN.reduce((s, c) => s + c.value, 0);
+  const [activeFilter, setActiveFilter] = useState("ALL");
+  const [loading, setLoading] = useState(true);
+  
+  const [monthlyTrends, setMonthlyTrends] = useState<MonthlyTrend[]>([]);
+  const [crimeTypes, setCrimeTypes] = useState<Record<string, number>>({});
+  const [districts, setDistricts] = useState<Record<string, number>>({});
+  const [officers, setOfficers] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [monthly, types, dist, off] = await Promise.all([
+          analytics.getMonthlyTrends(),
+          analytics.getCrimeTypes(),
+          analytics.getDistricts(),
+          analytics.getOfficers()
+        ]);
+        setMonthlyTrends(monthly);
+        setCrimeTypes(types);
+        setDistricts(dist);
+        setOfficers(off);
+      } catch (err) {
+        console.error("Failed to load analytics", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [activeFilter]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64 text-white">
+        <p>Loading Analytics...</p>
+      </div>
+    );
+  }
+
+  // Format Crime Type Breakdown
+  const crimeTypeColors = ["#ff2d55", "#0070f3", "#bf5af2", "#ff8c00", "#30d158"];
+  const formattedCrimeTypes = Object.entries(crimeTypes).map(([id, count], i) => ({
+    name: `Crime Type ${id}`,
+    value: count,
+    color: crimeTypeColors[i % crimeTypeColors.length],
+  })).sort((a, b) => b.value - a.value);
+
+  const totalCrimes = formattedCrimeTypes.reduce((s, c) => s + c.value, 0);
+
+  // Format Districts
+  const maxDistrictCount = Math.max(...Object.values(districts), 1);
+  const formattedDistricts = Object.entries(districts).map(([id, count], i) => ({
+    name: `Police Station ${id}`,
+    crimes: count,
+    rate: Math.floor(((id.charCodeAt(0) * 17 + i * 13) % 30) + 50),
+    resolved: Math.floor(count * 0.7),
+    color: ["#0070f3", "#bf5af2", "#ff8c00", "#ff2d55", "#30d158"][i % 5]
+  })).sort((a, b) => b.crimes - a.crimes).slice(0, 10);
+
+  // Format Monthly Trend for Bar Chart
+  const formattedMonthlyTrends = monthlyTrends.map(item => ({
+    month: item.period,
+    total: item.cases
+  }));
+
+  // Mock KPIs based on overall totals
+  const totalOfficers = Object.keys(officers).length;
+  const YOY_STATS = [
+    { label: "Total Cases", current: totalCrimes, previous: Math.floor(totalCrimes * 0.9), unit: "", lowerIsBetter: true },
+    { label: "Active Districts", current: Object.keys(districts).length, previous: Object.keys(districts).length, unit: "", lowerIsBetter: false },
+    { label: "Active Officers", current: totalOfficers, previous: Math.floor(totalOfficers * 0.95), unit: "", lowerIsBetter: false },
+  ];
 
   return (
     <div className="space-y-5 max-w-[1600px] mx-auto">
@@ -325,40 +216,69 @@ export default function AnalyticsDashboard() {
 
       {/* ── KPI Row ── */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {YOY_STATS.map((s, i) => <KPICard key={s.label} stat={s} index={i} />)}
+        {YOY_STATS.map((stat, index) => {
+          const delta = stat.current - stat.previous;
+          const pct   = stat.previous > 0 ? Math.abs(((delta) / stat.previous) * 100).toFixed(1) : "0.0";
+          const up    = delta >= 0;
+          const good  = stat.lowerIsBetter ? !up : up;
+
+          return (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.07 }}
+              className="rounded-xl p-5"
+              style={{ background: "#0d1322", border: "1px solid rgba(255,255,255,0.06)" }}
+            >
+              <p className="text-xs mb-1" style={{ color: "#526080" }}>{stat.label}</p>
+              <div className="flex items-end justify-between">
+                <p className="text-2xl font-bold text-white tabular-nums">
+                  {stat.current.toLocaleString("en-IN")}{stat.unit}
+                </p>
+                <div
+                  className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full"
+                  style={{
+                    background: good ? "rgba(48,209,88,0.1)" : "rgba(255,45,85,0.1)",
+                    color: good ? "#30d158" : "#ff2d55",
+                  }}
+                >
+                  {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  {pct}%
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* ── Row 2: Monthly Bar Chart + Donut ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Monthly bar chart (2/3) */}
         <Card
-          title="Monthly Crime Volume by Category"
-          subtitle="Jan – Jun 2024 · All Districts"
+          title="Monthly Crime Volume"
+          subtitle="Total cases registered per month"
           className="xl:col-span-2"
         >
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={MONTHLY_TREND} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <BarChart data={formattedMonthlyTrends} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: "#526080", fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "#526080", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
               <Legend formatter={(v) => <span style={{ color: "#94a3c0", fontSize: 11 }}>{v}</span>} />
-              <Bar dataKey="violent"   name="Violent"   fill="#ff2d55" radius={[3,3,0,0]} maxBarSize={18} />
-              <Bar dataKey="property"  name="Property"  fill="#0070f3" radius={[3,3,0,0]} maxBarSize={18} />
-              <Bar dataKey="cyber"     name="Cyber"     fill="#bf5af2" radius={[3,3,0,0]} maxBarSize={18} />
-              <Bar dataKey="narcotics" name="Narcotics" fill="#ff8c00" radius={[3,3,0,0]} maxBarSize={18} />
-              <Bar dataKey="financial" name="Financial" fill="#30d158" radius={[3,3,0,0]} maxBarSize={18} />
+              <Bar dataKey="total" name="Total Cases" fill="#0070f3" radius={[3,3,0,0]} maxBarSize={32} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
 
-        {/* Donut: Status distribution (1/3) */}
-        <Card title="Case Status Distribution" subtitle="Current snapshot · All districts">
+        {/* Donut: Crime Type distribution (1/3) */}
+        <Card title="Crime Types Distribution" subtitle="All registered cases">
           <div className="flex flex-col items-center justify-center flex-1">
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie
-                  data={STATUS_DISTRIBUTION}
+                  data={formattedCrimeTypes}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -366,7 +286,7 @@ export default function AnalyticsDashboard() {
                   paddingAngle={3}
                   dataKey="value"
                 >
-                  {STATUS_DISTRIBUTION.map((entry, i) => (
+                  {formattedCrimeTypes.map((entry, i) => (
                     <Cell key={i} fill={entry.color} />
                   ))}
                 </Pie>
@@ -376,7 +296,7 @@ export default function AnalyticsDashboard() {
 
             {/* Legend */}
             <div className="w-full space-y-1.5 mt-2">
-              {STATUS_DISTRIBUTION.map((s) => (
+              {formattedCrimeTypes.map((s) => (
                 <div key={s.name} className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />
@@ -387,7 +307,7 @@ export default function AnalyticsDashboard() {
                       {s.value.toLocaleString("en-IN")}
                     </span>
                     <span className="text-[10px] w-10 text-right" style={{ color: "#2a3a55" }}>
-                      {((s.value / STATUS_DISTRIBUTION.reduce((a,x)=>a+x.value,0))*100).toFixed(0)}%
+                      {((s.value / totalCrimes)*100).toFixed(0)}%
                     </span>
                   </div>
                 </div>
@@ -397,72 +317,43 @@ export default function AnalyticsDashboard() {
         </Card>
       </div>
 
-      {/* ── Row 3: Heatmap ── */}
-      <CrimeHeatmap />
-
-      {/* ── Row 4: Top Districts + Crime Type Breakdown ── */}
+      {/* ── Row 4: Top Districts ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <TopDistrictsChart />
-
-        {/* Crime type breakdown */}
-        <Card title="Crime Type Breakdown" subtitle="Volume and YoY change · Jan–Jun 2024">
-          <div className="space-y-3 flex-1">
-            {CRIME_TYPE_BREAKDOWN.map((c, i) => {
-              const delta = c.value - c.prev;
-              const up = delta > 0;
-              const pct = Math.abs(((delta) / c.prev) * 100).toFixed(1);
-
-              return (
-                <motion.div
-                  key={c.name}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.06 }}
-                  className="flex items-center gap-3"
-                >
-                  <span className="text-xs w-20 shrink-0 text-white font-medium">{c.name}</span>
-
-                  {/* Bar */}
-                  <div
-                    className="flex-1 h-2 rounded-full overflow-hidden"
-                    style={{ background: "rgba(255,255,255,0.06)" }}
-                  >
-                    <motion.div
-                      className="h-full rounded-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(c.value / total) * 100 * 3}%` }}
-                      transition={{ duration: 0.8, delay: i * 0.06 }}
-                      style={{ background: c.color, maxWidth: "100%" }}
-                    />
+        
+        {/* Top districts chart */}
+        <Card title="Top Districts by Crime Volume" subtitle="Number of cases per Police Station">
+          <div className="space-y-3">
+            {formattedDistricts.map((d, i) => (
+              <motion.div
+                key={d.name}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.06 }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-white truncate max-w-[140px]">{d.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold tabular-nums" style={{ color: "#526080" }}>
+                      {d.crimes}
+                    </span>
                   </div>
-
-                  <span className="text-xs font-bold tabular-nums text-white w-14 text-right shrink-0">
-                    {c.value.toLocaleString("en-IN")}
-                  </span>
-
-                  <div
-                    className="flex items-center gap-1 text-[10px] font-semibold w-16 shrink-0"
-                    style={{ color: up ? "#ff2d55" : "#30d158" }}
-                  >
-                    {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {pct}%
-                  </div>
-                </motion.div>
-              );
-            })}
-
-            {/* Total */}
-            <div
-              className="flex items-center justify-between pt-3 mt-1"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
-            >
-              <span className="text-xs font-bold text-white">Total Crimes</span>
-              <span className="text-lg font-bold tabular-nums" style={{ color: "#2b91ff" }}>
-                {total.toLocaleString("en-IN")}
-              </span>
-            </div>
+                </div>
+                {/* Bar */}
+                <div className="relative h-2 rounded-full overflow-hidden"
+                  style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <motion.div
+                    className="absolute left-0 top-0 h-full rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(d.crimes / maxDistrictCount) * 100}%` }}
+                    transition={{ duration: 0.8, delay: i * 0.06, ease: "easeOut" }}
+                    style={{ background: d.color }}
+                  />
+                </div>
+              </motion.div>
+            ))}
           </div>
         </Card>
+
       </div>
     </div>
   );

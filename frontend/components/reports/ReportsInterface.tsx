@@ -1,18 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText, BarChart3, Network, Calendar, AlertTriangle,
-  FolderOpen, Download, Eye, Trash2, RefreshCcw, Plus,
-  Clock, Lock, CheckCircle2, XCircle, Loader2, ChevronRight,
-  Shield, User, FileDown, Search, Filter,
+  FolderOpen, Download, Eye, Plus,
+  Clock, CheckCircle2, XCircle, Loader2, ChevronRight,
+  Shield, User, Search,
 } from "lucide-react";
 import {
-  GENERATED_REPORTS, REPORT_TEMPLATES, TYPE_CFG, CLASS_CFG,
-  type GeneratedReport, type ReportType,
+  REPORT_TEMPLATES, TYPE_CFG, CLASS_CFG,
+  type ReportType,
 } from "@/lib/mock-data/reports";
 import { formatRelativeTime, formatDate } from "@/lib/utils";
+import { reportsService, ReportSummary, ReportDetail } from "@/lib/services/reports";
 
 // ─── Icon map ─────────────────────────────────────────────────────────────────
 const TEMPLATE_ICONS: Record<string, React.ElementType> = {
@@ -20,23 +21,72 @@ const TEMPLATE_ICONS: Record<string, React.ElementType> = {
 };
 
 // ─── Status config ────────────────────────────────────────────────────────────
-const STATUS_CFG = {
-  ready:      { icon: CheckCircle2, color: "#30d158", label: "Ready",      bg: "rgba(48,209,88,0.1)"  },
-  generating: { icon: Loader2,      color: "#ffd60a", label: "Generating", bg: "rgba(255,214,10,0.1)" },
-  failed:     { icon: XCircle,      color: "#ff2d55", label: "Failed",     bg: "rgba(255,45,85,0.1)"  },
-  scheduled:  { icon: Clock,        color: "#0070f3", label: "Scheduled",  bg: "rgba(0,112,243,0.1)"  },
+interface StatusCfgItem {
+  icon: React.ElementType;
+  color: string;
+  label: string;
+  bg: string;
+}
+
+const STATUS_CFG: Record<string, StatusCfgItem> = {
+  READY:      { icon: CheckCircle2, color: "#30d158", label: "Ready",      bg: "rgba(48,209,88,0.1)"  },
+  GENERATING: { icon: Loader2,      color: "#ffd60a", label: "Generating", bg: "rgba(255,214,10,0.1)" },
+  FAILED:     { icon: XCircle,      color: "#ff2d55", label: "Failed",     bg: "rgba(255,45,85,0.1)"  },
+  SCHEDULED:  { icon: Clock,        color: "#0070f3", label: "Scheduled",  bg: "rgba(0,112,243,0.1)"  },
 };
 
 // ─── Report Preview Panel ─────────────────────────────────────────────────────
-function ReportPreview({ report, onClose }: { report: GeneratedReport; onClose: () => void }) {
-  const typeCfg = TYPE_CFG[report.type];
-  const classCfg = CLASS_CFG[report.classification];
-  const status = STATUS_CFG[report.status];
-  const StatusIcon = status.icon;
+function ReportPreview({ reportId, onClose }: { reportId: string; onClose: () => void }) {
+  const [report, setReport] = useState<ReportDetail & { sections?: { title?: string; content?: unknown }[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    reportsService.getReport(reportId).then((res) => {
+      setReport(res);
+      setLoading(false);
+    }).catch(err => {
+      console.error(err);
+      setLoading(false);
+    });
+  }, [reportId]);
+
+  if (loading) {
+    return (
+      <motion.div
+        initial={{ x: "100%", opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: "100%", opacity: 0 }}
+        className="flex flex-col h-full shrink-0 overflow-hidden items-center justify-center text-white"
+        style={{ width: 400, background: "#0a0f1e", borderLeft: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        <Loader2 className="w-8 h-8 animate-spin mb-2" />
+        <p>Loading report...</p>
+      </motion.div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <motion.div
+        initial={{ x: "100%", opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: "100%", opacity: 0 }}
+        className="flex flex-col h-full shrink-0 overflow-hidden items-center justify-center text-white"
+        style={{ width: 400, background: "#0a0f1e", borderLeft: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        <XCircle className="w-8 h-8 text-red-500 mb-2" />
+        <p>Failed to load report</p>
+        <button onClick={onClose} className="mt-4 underline text-blue-400">Close</button>
+      </motion.div>
+    );
+  }
+
+  const typeCfg = (TYPE_CFG as Record<string, { label: string; color: string }>)[report.report_type] || TYPE_CFG["fir-summary"];
+  const classCfg = (CLASS_CFG as Record<string, { color: string; bg: string }>)[String(report.metadata?.classification || "Restricted")] || CLASS_CFG["Restricted"];
+  const status = STATUS_CFG[report.status] || STATUS_CFG["FAILED"];
 
   return (
     <motion.div
-      key={report.id}
       initial={{ x: "100%", opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: "100%", opacity: 0 }}
@@ -49,10 +99,16 @@ function ReportPreview({ report, onClose }: { report: GeneratedReport; onClose: 
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold" style={{ color: "#526080" }}>Report Preview</span>
           <div className="flex items-center gap-2">
-            {report.status === "ready" && (
-              <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
+            {report.status === "READY" && (
+              <button 
+                onClick={() => {
+                  reportsService.exportReport(reportId).then(res => {
+                    alert("Report exported!");
+                  }).catch(e => console.error(e));
+                }}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
                 style={{ background: "rgba(0,112,243,0.12)", border: "1px solid rgba(0,112,243,0.25)", color: "#2b91ff" }}>
-                <Download className="w-3 h-3" /> Download PDF
+                <Download className="w-3 h-3" /> Export
               </button>
             )}
             <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center"
@@ -65,42 +121,33 @@ function ReportPreview({ report, onClose }: { report: GeneratedReport; onClose: 
         {/* Classification banner */}
         <div className="w-full text-center py-1.5 rounded-lg font-bold text-xs tracking-widest uppercase mb-3"
           style={{ background: classCfg.bg, color: classCfg.color, border: `1px solid ${classCfg.color}30` }}>
-          ⚠ {report.classification} — Government of India ⚠
+          ⚠ {String(report.metadata?.classification || "RESTRICTED")} — Government of India ⚠
         </div>
 
         <h3 className="text-sm font-bold text-white mb-1 leading-snug">{report.title}</h3>
         <div className="flex flex-wrap gap-2 text-[10px]" style={{ color: "#526080" }}>
-          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{report.period}</span>
-          <span className="flex items-center gap-1"><User className="w-3 h-3" />{report.generatedBy}</span>
-          {report.status === "ready" && (
-            <span className="flex items-center gap-1"><FileDown className="w-3 h-3" />{report.sizeMb} MB · {report.pages} pages</span>
-          )}
+          <span className="flex items-center gap-1"><User className="w-3 h-3" />{report.generated_by}</span>
         </div>
       </div>
 
       {/* Document preview body */}
       <div className="flex-1 overflow-y-auto p-5">
-        {report.status === "generating" ? (
+        {report.status === "GENERATING" ? (
           <div className="flex flex-col items-center justify-center h-full text-center gap-4">
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}>
               <Loader2 className="w-10 h-10" style={{ color: "#ffd60a" }} />
             </motion.div>
             <div>
               <p className="text-sm font-semibold text-white mb-1">Generating Report…</p>
-              <p className="text-xs" style={{ color: "#526080" }}>CrimeSphere AI is compiling data and generating your report. This may take up to 60 seconds.</p>
+              <p className="text-xs" style={{ color: "#526080" }}>CrimeSphere AI is compiling data and generating your report.</p>
             </div>
           </div>
-        ) : report.status === "failed" ? (
+        ) : report.status === "FAILED" ? (
           <div className="flex flex-col items-center justify-center h-full text-center gap-4">
             <XCircle className="w-10 h-10" style={{ color: "#ff2d55" }} />
             <div>
               <p className="text-sm font-semibold text-white mb-1">Generation Failed</p>
-              <p className="text-xs" style={{ color: "#526080" }}>{report.summary}</p>
             </div>
-            <button className="flex items-center gap-2 text-xs px-4 py-2 rounded-lg"
-              style={{ background: "rgba(0,112,243,0.12)", border: "1px solid rgba(0,112,243,0.25)", color: "#2b91ff" }}>
-              <RefreshCcw className="w-3 h-3" /> Retry Generation
-            </button>
           </div>
         ) : (
           /* Actual report preview */
@@ -114,31 +161,33 @@ function ReportPreview({ report, onClose }: { report: GeneratedReport; onClose: 
                   <span className="text-xs font-bold" style={{ color: "#0070f3" }}>CrimeSphere AI · National Crime Intelligence Platform</span>
                 </div>
                 <p className="text-[10px]" style={{ color: "#2a3a55" }}>
-                  Generated: {formatDate(report.generatedAt)} · Doc ID: {report.id.toUpperCase()} · {report.pages} Pages
+                  Generated: {formatDate(report.generated_at)} · Doc ID: {(report.report_id || "").toUpperCase().split('-')[0]}
                 </p>
               </div>
 
               {/* Summary */}
               <div className="px-5 py-4">
                 <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#2a3a55" }}>Executive Summary</p>
-                <p className="text-xs leading-relaxed" style={{ color: "#94a3c0" }}>{report.summary}</p>
+                <p className="text-xs leading-relaxed" style={{ color: "#94a3c0" }}>{String(report.metadata?.summary || "No summary available.")}</p>
               </div>
             </div>
 
             {/* Sections */}
-            {report.sections.map((section, i) => (
+            {(report.sections || []).map((section: { title?: string; content?: unknown }, i: number) => (
               <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
                 className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <p className="text-xs font-bold text-white mb-2">{i + 1}. {section.heading}</p>
-                <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: "#94a3c0" }}>{section.content}</p>
+                <p className="text-xs font-bold text-white mb-2">{i + 1}. {section.title || "Section"}</p>
+                <div className="text-xs leading-relaxed whitespace-pre-line" style={{ color: "#94a3c0" }}>
+                  {typeof section.content === "string" ? section.content : JSON.stringify(section.content, null, 2)}
+                </div>
               </motion.div>
             ))}
 
             {/* Footer */}
             <div className="rounded-xl px-5 py-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
               <p className="text-[10px] text-center" style={{ color: "#2a3a55" }}>
-                This document is classified {report.classification}. Unauthorised distribution is an offence under the Official Secrets Act, 1923.
-                <br />Generated by CrimeSphere AI v2.4 · Model Confidence: 94.7%
+                This document is classified {String(report.metadata?.classification || "RESTRICTED")}.
+                <br />Generated by CrimeSphere AI v2.4
               </p>
             </div>
           </div>
@@ -149,16 +198,22 @@ function ReportPreview({ report, onClose }: { report: GeneratedReport; onClose: 
 }
 
 // ─── Generate Report Modal ────────────────────────────────────────────────────
-function GenerateModal({ onClose }: { onClose: () => void }) {
+function GenerateModal({ onClose, onGenerate }: { onClose: () => void, onGenerate: () => void }) {
   const [selectedType, setSelectedType] = useState<ReportType | null>(null);
   const [generating, setGenerating] = useState(false);
 
   const handleGenerate = async () => {
     if (!selectedType) return;
     setGenerating(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    setGenerating(false);
-    onClose();
+    try {
+      await reportsService.generateReport({ report_type: selectedType, case_id: "default" });
+      onGenerate();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGenerating(false);
+      onClose();
+    }
   };
 
   return (
@@ -187,7 +242,7 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
             const Icon = TEMPLATE_ICONS[tpl.icon] ?? FileText;
             const isSelected = selectedType === tpl.type;
             return (
-              <button key={tpl.id} onClick={() => setSelectedType(tpl.type)}
+              <button key={tpl.id} onClick={() => setSelectedType(tpl.type as ReportType)}
                 className="text-left rounded-xl p-4 transition-all"
                 style={{
                   background: isSelected ? `${tpl.color}12` : "rgba(255,255,255,0.025)",
@@ -199,29 +254,9 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <p className="text-xs font-bold text-white mb-1">{tpl.name}</p>
                 <p className="text-[10px] leading-snug mb-2" style={{ color: "#526080" }}>{tpl.description}</p>
-                <div className="flex items-center justify-between text-[10px]" style={{ color: "#2a3a55" }}>
-                  <span>{tpl.avgPages} pages</span>
-                  <span>{tpl.estTime}</span>
-                </div>
               </button>
             );
           })}
-        </div>
-
-        {/* Filters row */}
-        <div className="px-6 pb-4 grid grid-cols-2 gap-3">
-          {[
-            { label: "District", opts: ["All Districts", "Central Delhi", "Mumbai City", "Bengaluru Urban"] },
-            { label: "Period",   opts: ["Jul 2024", "Jun 2024", "Q2 2024", "Q1 2024", "FY 2023–24"] },
-          ].map(({ label, opts }) => (
-            <div key={label}>
-              <label className="text-[10px] font-semibold uppercase tracking-widest mb-1.5 block" style={{ color: "#2a3a55" }}>{label}</label>
-              <select className="w-full rounded-lg px-3 py-2 text-xs text-white outline-none"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)" }}>
-                {opts.map((o) => <option key={o} value={o} style={{ background: "#0d1322" }}>{o}</option>)}
-              </select>
-            </div>
-          ))}
         </div>
 
         {/* Actions */}
@@ -247,17 +282,35 @@ function GenerateModal({ onClose }: { onClose: () => void }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function ReportsInterface() {
-  const [selected, setSelected]       = useState<GeneratedReport | null>(GENERATED_REPORTS[0]);
-  const [showModal, setShowModal]     = useState(false);
-  const [search, setSearch]           = useState("");
-  const [filterType, setFilterType]   = useState("all");
+  const [reports, setReports] = useState<ReportSummary[]>([]);
+  const [selected, setSelected] = useState<ReportSummary | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const filtered = GENERATED_REPORTS.filter((r) => {
+  const fetchReports = () => {
+    reportsService.listReports().then((res) => {
+      const list = res?.reports ?? [];
+      setReports(list);
+      if (list.length > 0 && !selected) {
+        setSelected(list[0]);
+      }
+    }).catch((err) => {
+      console.error("Failed to load reports:", err);
+      setReports([]);
+    });
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, []);
+
+  const filtered = reports.filter((r) => {
     const q = search.toLowerCase();
-    const matchQ = !q || r.title.toLowerCase().includes(q);
-    const matchT = filterType === "all"   || r.type   === filterType;
-    const matchS = filterStatus === "all" || r.status === filterStatus;
+    const matchQ = !q || (r.title || "").toLowerCase().includes(q);
+    const matchT = filterType === "all" || r.report_type === filterType;
+    const matchS = filterStatus === "all" || (r.status || "").toLowerCase() === filterStatus;
     return matchQ && matchT && matchS;
   });
 
@@ -275,7 +328,7 @@ export default function ReportsInterface() {
             <div>
               <h2 className="text-base font-bold text-white">Reports</h2>
               <p className="text-xs" style={{ color: "#526080" }}>
-                {GENERATED_REPORTS.filter((r) => r.status === "ready").length} ready · {GENERATED_REPORTS.filter((r) => r.status === "generating").length} generating
+                {reports.filter((r) => r.status === "READY").length} ready · {reports.filter((r) => r.status === "GENERATING").length} generating
               </p>
             </div>
             <button onClick={() => setShowModal(true)}
@@ -317,14 +370,13 @@ export default function ReportsInterface() {
         <div className="flex-1 overflow-y-auto p-6 space-y-3">
           <AnimatePresence>
             {filtered.map((report, i) => {
-              const typeCfg   = TYPE_CFG[report.type];
-              const classCfg  = CLASS_CFG[report.classification];
-              const statusCfg = STATUS_CFG[report.status];
+              const typeCfg   = (TYPE_CFG as Record<string, { label: string; color: string }>)[report.report_type] || TYPE_CFG["fir-summary"];
+              const statusCfg = STATUS_CFG[report.status] || STATUS_CFG["FAILED"];
               const StatusIcon = statusCfg.icon;
-              const isSelected = selected?.id === report.id;
+              const isSelected = selected?.report_id === report.report_id;
 
               return (
-                <motion.div key={report.id}
+                <motion.div key={report.report_id}
                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
                   onClick={() => setSelected(isSelected ? null : report)}
                   className="rounded-xl p-4 cursor-pointer transition-all group"
@@ -350,7 +402,7 @@ export default function ReportsInterface() {
                           {/* Status */}
                           <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
                             style={{ background: statusCfg.bg, color: statusCfg.color }}>
-                            <StatusIcon className={`w-2.5 h-2.5 ${report.status === "generating" ? "animate-spin" : ""}`} />
+                            <StatusIcon className={`w-2.5 h-2.5 ${report.status === "GENERATING" ? "animate-spin" : ""}`} />
                             {statusCfg.label}
                           </span>
                         </div>
@@ -361,37 +413,19 @@ export default function ReportsInterface() {
                           style={{ background: `${typeCfg.color}15`, color: typeCfg.color }}>
                           {typeCfg.label}
                         </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ background: classCfg.bg, color: classCfg.color }}>
-                          <Lock className="w-2.5 h-2.5 inline mr-1" />{report.classification}
-                        </span>
-                        <span className="text-[10px]" style={{ color: "#526080" }}>{report.period} · {report.district}</span>
                       </div>
 
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 text-[10px]" style={{ color: "#2a3a55" }}>
-                          <span className="flex items-center gap-1"><User className="w-2.5 h-2.5" />{report.generatedBy}</span>
-                          <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{formatRelativeTime(report.generatedAt)}</span>
-                          {report.status === "ready" && <span>{report.pages} pages · {report.sizeMb} MB</span>}
+                          <span className="flex items-center gap-1"><User className="w-2.5 h-2.5" />{report.generated_by}</span>
+                          <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{formatRelativeTime(report.generated_at)}</span>
                         </div>
 
                         <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {report.status === "ready" && (
-                            <button onClick={(e) => e.stopPropagation()}
-                              className="p-1.5 rounded-lg transition-colors"
-                              style={{ color: "#526080" }} title="Download">
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          )}
                           <button onClick={(e) => { e.stopPropagation(); setSelected(report); }}
                             className="p-1.5 rounded-lg transition-colors"
                             style={{ color: "#526080" }} title="Preview">
                             <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-lg transition-colors"
-                            style={{ color: "#526080" }} title="Delete">
-                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                           <ChevronRight className="w-3.5 h-3.5" style={{ color: isSelected ? "#2b91ff" : "#2a3a55" }} />
                         </div>
@@ -414,12 +448,12 @@ export default function ReportsInterface() {
 
       {/* ═══ RIGHT: Preview Panel ═══ */}
       <AnimatePresence>
-        {selected && <ReportPreview report={selected} onClose={() => setSelected(null)} />}
+        {selected && <ReportPreview reportId={selected.report_id} onClose={() => setSelected(null)} />}
       </AnimatePresence>
 
       {/* ═══ Generate Modal ═══ */}
       <AnimatePresence>
-        {showModal && <GenerateModal onClose={() => setShowModal(false)} />}
+        {showModal && <GenerateModal onClose={() => setShowModal(false)} onGenerate={fetchReports} />}
       </AnimatePresence>
     </div>
   );

@@ -1,23 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Shield, ScrollText, Activity, Lock,
   CheckCircle2, XCircle, AlertTriangle, Wifi,
   Database, Brain, HardDrive, Zap, Search,
   Plus, Edit2, Ban, Check, X,
-  ChevronRight, Clock, LogIn, LogOut,
-  FileText, Settings, RefreshCcw,
+  ChevronRight, Clock,
+  Settings, RefreshCcw,
 } from "lucide-react";
+import { SYSTEM_METRICS, AUDIT_CFG } from "@/lib/mock-data/admin";
+import { formatRelativeTime } from "@/lib/utils";
 import {
-  OFFICERS, ROLES, AUDIT_LOGS, SYSTEM_METRICS,
-  AUDIT_CFG, type OfficerUser,
-} from "@/lib/mock-data/admin";
-import { formatRelativeTime, formatDate } from "@/lib/utils";
+  adminService,
+  type OfficerRecord,
+  type RoleRecord,
+  type AuditRecord,
+} from "@/lib/services/admin";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const USER_STATUS_CFG = {
+interface StatusCfg {
+  color: string;
+  bg: string;
+  label: string;
+}
+
+const USER_STATUS_CFG: Record<string, StatusCfg> = {
   active:    { color: "#30d158", bg: "rgba(48,209,88,0.1)",  label: "Active"    },
   inactive:  { color: "#526080", bg: "rgba(82,96,128,0.1)",  label: "Inactive"  },
   suspended: { color: "#ff2d55", bg: "rgba(255,45,85,0.1)",  label: "Suspended" },
@@ -31,7 +40,12 @@ const METRIC_ICONS: Record<string, React.ElementType> = {
   Wifi, Database, Brain, HardDrive, Users, Zap, Shield,
 };
 
-const METRIC_STATUS_CFG = {
+interface MetricStatusCfg {
+  color: string;
+  bg: string;
+}
+
+const METRIC_STATUS_CFG: Record<string, MetricStatusCfg> = {
   healthy:  { color: "#30d158", bg: "rgba(48,209,88,0.1)"  },
   warning:  { color: "#ffd60a", bg: "rgba(255,214,10,0.1)" },
   critical: { color: "#ff2d55", bg: "rgba(255,45,85,0.1)"  },
@@ -40,27 +54,19 @@ const METRIC_STATUS_CFG = {
 
 type AdminSection = "users" | "roles" | "audit" | "system" | "security";
 
-const SECTIONS: { key: AdminSection; label: string; icon: React.ElementType; badge?: number }[] = [
-  { key: "users",    label: "User Management",      icon: Users,       badge: OFFICERS.length },
-  { key: "roles",    label: "Roles & Permissions",  icon: Shield,      badge: ROLES.length },
-  { key: "audit",    label: "Audit Logs",           icon: ScrollText,  badge: AUDIT_LOGS.length },
-  { key: "system",   label: "System Health",        icon: Activity     },
-  { key: "security", label: "Security Settings",    icon: Lock         },
-];
-
 function initials(name: string) {
   return name.split(" ").slice(-2).map((n) => n[0]).join("").toUpperCase();
 }
 
 // ─── Users Tab ────────────────────────────────────────────────────────────────
-function UsersTab() {
+function UsersTab({ officers }: { officers: OfficerRecord[] }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const filtered = OFFICERS.filter((o) => {
+  const filtered = officers.filter((o) => {
     const q = search.toLowerCase();
-    const matchQ = !q || o.name.toLowerCase().includes(q) || o.badgeNumber.toLowerCase().includes(q) || o.district.toLowerCase().includes(q);
-    const matchS = filterStatus === "all" || o.status === filterStatus;
+    const matchQ = !q || (o.name || "").toLowerCase().includes(q) || (o.badge_number || "").toLowerCase().includes(q) || (o.district || "").toLowerCase().includes(q);
+    const matchS = filterStatus === "all" || (o.status || "").toLowerCase() === filterStatus;
     return matchQ && matchS;
   });
 
@@ -71,7 +77,7 @@ function UsersTab() {
         <div>
           <h3 className="text-base font-bold text-white">Officer Accounts</h3>
           <p className="text-xs mt-0.5" style={{ color: "#526080" }}>
-            {OFFICERS.filter((o) => o.status === "active").length} active · {OFFICERS.filter((o) => o.status === "suspended").length} suspended
+            {officers.filter((o) => o.status.toLowerCase() === "active").length} active · {officers.filter((o) => o.status.toLowerCase() === "suspended").length} suspended
           </p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold"
@@ -111,8 +117,10 @@ function UsersTab() {
           </thead>
           <tbody>
             {filtered.map((o, i) => {
-              const sc = USER_STATUS_CFG[o.status];
+              const sc = USER_STATUS_CFG[o.status.toLowerCase()] || USER_STATUS_CFG["inactive"];
               const isLast = i === filtered.length - 1;
+              const cl = o.clearance_level || 1;
+              const c_color = CLEARANCE_COLOR[cl] || CLEARANCE_COLOR[1];
               return (
                 <motion.tr key={o.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
                   className="group transition-colors cursor-pointer"
@@ -124,33 +132,33 @@ function UsersTab() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                        style={{ background: `linear-gradient(135deg, ${CLEARANCE_COLOR[o.clearanceLevel]}80, ${CLEARANCE_COLOR[o.clearanceLevel]}40)`, border: `1px solid ${CLEARANCE_COLOR[o.clearanceLevel]}50` }}>
-                        {o.avatar}
+                        style={{ background: `linear-gradient(135deg, ${c_color}80, ${c_color}40)`, border: `1px solid ${c_color}50` }}>
+                        {initials(o.name)}
                       </div>
                       <div>
                         <p className="font-semibold text-white">{o.name}</p>
-                        <p className="text-[10px]" style={{ color: "#2a3a55" }}>{o.email}</p>
+                        <p className="text-[10px]" style={{ color: "#2a3a55" }}>{o.email || "-"}</p>
                       </div>
                     </div>
                   </td>
                   {/* Badge */}
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="font-mono text-[10px]" style={{ color: "#2b91ff" }}>{o.badgeNumber}</span>
+                    <span className="font-mono text-[10px]" style={{ color: "#2b91ff" }}>{o.badge_number}</span>
                   </td>
                   {/* Role */}
-                  <td className="px-4 py-3" style={{ color: "#526080" }}>{o.role}</td>
+                  <td className="px-4 py-3" style={{ color: "#526080" }}>{o.role || "OFFICER"}</td>
                   {/* District */}
-                  <td className="px-4 py-3 whitespace-nowrap" style={{ color: "#526080" }}>{o.district}</td>
+                  <td className="px-4 py-3 whitespace-nowrap" style={{ color: "#526080" }}>{o.district || "Unassigned"}</td>
                   {/* Clearance */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                      style={{ background: `${CLEARANCE_COLOR[o.clearanceLevel]}18`, color: CLEARANCE_COLOR[o.clearanceLevel] }}>
-                      L-{o.clearanceLevel}
+                      style={{ background: `${c_color}18`, color: c_color }}>
+                      L-{cl}
                     </span>
                   </td>
                   {/* MFA */}
                   <td className="px-4 py-3">
-                    {o.mfaEnabled
+                    {o.mfa_enabled !== false
                       ? <CheckCircle2 className="w-4 h-4" style={{ color: "#30d158" }} />
                       : <XCircle     className="w-4 h-4" style={{ color: "#ff2d55" }} />}
                   </td>
@@ -164,7 +172,7 @@ function UsersTab() {
                   </td>
                   {/* Last Login */}
                   <td className="px-4 py-3 whitespace-nowrap text-[10px]" style={{ color: "#2a3a55" }}>
-                    {formatRelativeTime(o.lastLogin)}
+                    {o.last_login ? formatRelativeTime(o.last_login) : "Never"}
                   </td>
                   {/* Actions */}
                   <td className="px-4 py-3">
@@ -188,30 +196,33 @@ function UsersTab() {
 }
 
 // ─── Roles Tab ────────────────────────────────────────────────────────────────
-function RolesTab() {
-  const [selectedRole, setSelectedRole] = useState(ROLES[0]);
+function RolesTab({ roles }: { roles: RoleRecord[] }) {
+  const [selectedRole, setSelectedRole] = useState<RoleRecord | undefined>(undefined);
+
+  if (!roles.length) return <div className="text-white">No roles found.</div>;
+  const currentRole = selectedRole || roles[0];
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
       {/* Left: Role list */}
       <div className="space-y-3">
-        <h3 className="text-sm font-bold text-white mb-1">Roles ({ROLES.length})</h3>
-        {ROLES.map((role) => (
-          <button key={role.id} onClick={() => setSelectedRole(role)}
+        <h3 className="text-sm font-bold text-white mb-1">Roles ({roles.length})</h3>
+        {roles.map((role) => (
+          <button key={role.id || role.name} onClick={() => setSelectedRole(role)}
             className="w-full text-left rounded-xl p-4 transition-all"
             style={{
-              background: selectedRole.id === role.id ? `${role.color}10` : "rgba(255,255,255,0.025)",
-              border: selectedRole.id === role.id ? `1.5px solid ${role.color}40` : "1px solid rgba(255,255,255,0.07)",
+              background: currentRole?.name === role.name ? `rgba(0,112,243,0.1)` : "rgba(255,255,255,0.025)",
+              border: currentRole?.name === role.name ? `1.5px solid rgba(0,112,243,0.4)` : "1px solid rgba(255,255,255,0.07)",
             }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-white">{role.name}</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                style={{ background: `${role.color}18`, color: role.color }}>L-{role.level}</span>
+                style={{ background: `rgba(0,112,243,0.18)`, color: "#0070f3" }}>L-{role.clearance_level}</span>
             </div>
             <p className="text-xs mb-2" style={{ color: "#526080" }}>{role.description}</p>
             <div className="flex items-center gap-1 text-[10px]" style={{ color: "#2a3a55" }}>
               <Users className="w-3 h-3" />
-              {role.userCount} officer{role.userCount !== 1 ? "s" : ""}
+              {role.userCount || 0} officer{role.userCount !== 1 ? "s" : ""}
             </div>
           </button>
         ))}
@@ -220,7 +231,7 @@ function RolesTab() {
       {/* Right: Permissions matrix */}
       <div className="xl:col-span-2">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-white">{selectedRole.name} — Permissions</h3>
+          <h3 className="text-sm font-bold text-white">{currentRole?.name} — Permissions</h3>
           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
             style={{ background: "rgba(0,112,243,0.1)", border: "1px solid rgba(0,112,243,0.2)", color: "#2b91ff" }}>
             <Edit2 className="w-3 h-3" /> Edit Role
@@ -230,23 +241,19 @@ function RolesTab() {
           <table className="w-full text-xs">
             <thead>
               <tr style={{ background: "#0a0f1e", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                {["Module", "Read", "Write", "Admin"].map((h) => (
+                {["Module", "Permissions"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left font-semibold uppercase tracking-wider"
                     style={{ color: "#2a3a55" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {selectedRole.permissions.map((perm, i) => (
-                <tr key={perm.module} style={{ borderBottom: i < selectedRole.permissions.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
-                  <td className="px-4 py-3 font-medium text-white">{perm.module}</td>
-                  {[perm.read, perm.write, perm.admin].map((val, j) => (
-                    <td key={j} className="px-4 py-3">
-                      {val
-                        ? <Check className="w-4 h-4" style={{ color: "#30d158" }} />
-                        : <X    className="w-4 h-4" style={{ color: "#2a3a55" }} />}
-                    </td>
-                  ))}
+              {(currentRole?.permissions || []).map((perm: string, i: number) => (
+                <tr key={i} style={{ borderBottom: i < (currentRole.permissions.length - 1) ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+                  <td className="px-4 py-3 font-medium text-white">{perm}</td>
+                  <td className="px-4 py-3">
+                    <Check className="w-4 h-4" style={{ color: "#30d158" }} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -258,24 +265,24 @@ function RolesTab() {
 }
 
 // ─── Audit Tab ────────────────────────────────────────────────────────────────
-function AuditTab() {
+function AuditTab({ auditLogs, fetchAudit }: { auditLogs: AuditRecord[], fetchAudit: () => void }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-base font-bold text-white">Audit Logs</h3>
           <p className="text-xs mt-0.5" style={{ color: "#526080" }}>
-            All system events · {AUDIT_LOGS.filter((l) => !l.success).length} security events
+            All system events · {auditLogs.filter((l) => !l.success).length} security events
           </p>
         </div>
-        <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+        <button onClick={fetchAudit} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
           style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#526080" }}>
           <RefreshCcw className="w-3 h-3" /> Refresh
         </button>
       </div>
       <div className="space-y-2">
-        {AUDIT_LOGS.map((log, i) => {
-          const cfg = AUDIT_CFG[log.action];
+        {auditLogs.map((log, i) => {
+          const cfg = (AUDIT_CFG as Record<string, { label: string; color: string }>)[log.action] || { color: "#526080", label: "Action" };
           return (
             <motion.div key={log.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
               className="flex items-start gap-3 rounded-xl p-3.5"
@@ -291,7 +298,7 @@ function AuditTab() {
                 <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                     style={{ background: `${cfg.color}18`, color: cfg.color }}>{cfg.label}</span>
-                  <span className="text-xs font-semibold text-white">{log.userName}</span>
+                  <span className="text-xs font-semibold text-white">{log.user_name || log.user_id}</span>
                   <span className="text-[10px]" style={{ color: "#526080" }}>·</span>
                   <span className="text-[10px]" style={{ color: "#526080" }}>{log.module}</span>
                   {!log.success && (
@@ -302,7 +309,7 @@ function AuditTab() {
                 <p className="text-xs leading-snug" style={{ color: "#94a3c0" }}>{log.description}</p>
                 <div className="flex items-center gap-3 mt-1 text-[10px]" style={{ color: "#2a3a55" }}>
                   <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{formatRelativeTime(log.timestamp)}</span>
-                  <span>IP: {log.ip}</span>
+                  <span>IP: {log.ip_address}</span>
                 </div>
               </div>
             </motion.div>
@@ -387,10 +394,10 @@ function SystemTab() {
 }
 
 // ─── Security Tab ─────────────────────────────────────────────────────────────
-function SecurityTab() {
-  const failedLogins = AUDIT_LOGS.filter((l) => l.action === "failed-login").length;
-  const mfaEnabled   = OFFICERS.filter((o) => o.mfaEnabled).length;
-  const mfaPct       = Math.round((mfaEnabled / OFFICERS.length) * 100);
+function SecurityTab({ auditLogs, officers }: { auditLogs: AuditRecord[], officers: OfficerRecord[] }) {
+  const failedLogins = auditLogs.filter((l) => l.action === "LOGIN_FAILED").length;
+  const mfaEnabled   = officers.filter((o) => o.mfa_enabled !== false).length;
+  const mfaPct       = officers.length > 0 ? Math.round((mfaEnabled / officers.length) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -398,8 +405,8 @@ function SecurityTab() {
         <h3 className="text-base font-bold text-white mb-4">Security Overview</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: "Failed Logins (24h)", value: failedLogins, color: "#ff2d55", icon: XCircle,      note: "1 IP blocked" },
-            { label: "MFA Coverage",        value: `${mfaPct}%`, color: mfaPct >= 80 ? "#30d158" : "#ff8c00", icon: Shield, note: `${mfaEnabled}/${OFFICERS.length} officers` },
+            { label: "Failed Logins (24h)", value: failedLogins, color: "#ff2d55", icon: XCircle,      note: "From Audit Logs" },
+            { label: "MFA Coverage",        value: `${mfaPct}%`, color: mfaPct >= 80 ? "#30d158" : "#ff8c00", icon: Shield, note: `${mfaEnabled}/${officers.length} officers` },
             { label: "Active Sessions",     value: 9,            color: "#0070f3", icon: Users,         note: "Avg session: 2.4 hrs" },
           ].map(({ label, value, color, icon: Icon, note }) => (
             <div key={label} className="rounded-xl p-4" style={{ background: "#0d1322", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -447,22 +454,6 @@ function SecurityTab() {
           ))}
         </div>
       </div>
-
-      {/* Blocked IPs */}
-      <div className="rounded-xl p-4" style={{ background: "rgba(255,45,85,0.05)", border: "1px solid rgba(255,45,85,0.2)" }}>
-        <div className="flex items-center gap-2 mb-3">
-          <AlertTriangle className="w-4 h-4" style={{ color: "#ff2d55" }} />
-          <span className="text-xs font-bold" style={{ color: "#ff2d55" }}>Blocked IP Addresses (1)</span>
-        </div>
-        <div className="flex items-center justify-between text-xs rounded-lg px-3 py-2.5"
-          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <span className="font-mono text-white">192.168.2.99</span>
-          <span style={{ color: "#526080" }}>3 failed logins · blocked 80 min ago</span>
-          <button className="text-[10px] px-2 py-0.5 rounded" style={{ background: "rgba(255,45,85,0.15)", color: "#ff2d55" }}>
-            Unblock
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -470,13 +461,34 @@ function SecurityTab() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const [activeSection, setActiveSection] = useState<AdminSection>("users");
+  const [officers, setOfficers] = useState<OfficerRecord[]>([]);
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([]);
+
+  const fetchData = () => {
+    adminService.getOfficers().then(setOfficers).catch(console.error);
+    adminService.getRoles().then(setRoles).catch(console.error);
+    adminService.getAudit().then(setAuditLogs).catch(console.error);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const SECTIONS: { key: AdminSection; label: string; icon: React.ElementType; badge?: number }[] = [
+    { key: "users",    label: "User Management",      icon: Users,       badge: officers.length },
+    { key: "roles",    label: "Roles & Permissions",  icon: Shield,      badge: roles.length },
+    { key: "audit",    label: "Audit Logs",           icon: ScrollText,  badge: auditLogs.length },
+    { key: "system",   label: "System Health",        icon: Activity     },
+    { key: "security", label: "Security Settings",    icon: Lock         },
+  ];
 
   const CONTENT: Record<AdminSection, React.ReactNode> = {
-    users:    <UsersTab    />,
-    roles:    <RolesTab    />,
-    audit:    <AuditTab    />,
-    system:   <SystemTab   />,
-    security: <SecurityTab />,
+    users:    <UsersTab officers={officers} />,
+    roles:    <RolesTab roles={roles} />,
+    audit:    <AuditTab auditLogs={auditLogs} fetchAudit={fetchData} />,
+    system:   <SystemTab />,
+    security: <SecurityTab auditLogs={auditLogs} officers={officers} />,
   };
 
   return (
