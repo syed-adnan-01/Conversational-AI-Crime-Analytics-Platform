@@ -17,8 +17,8 @@ idna==3.18
 click==8.4.2
 
 # Database
-SQLAlchemy
 psycopg2-binary
+SQLAlchemy
 
 # Auth
 python-jose[cryptography]

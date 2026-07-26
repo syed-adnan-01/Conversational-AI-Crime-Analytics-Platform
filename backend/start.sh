@@ -7,4 +7,10 @@ PORT="${X_ZOHO_CATALYST_LISTEN_PORT:-9000}"
 
 echo "Starting CrimeSphere backend on port $PORT"
 
-exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+exec uvicorn app.main:app \
+  --host 0.0.0.0 \
+  --port "$PORT" \
+  --workers 1 \
+  --log-level info \
+  --timeout-keep-alive 75 \
+  --no-access-log

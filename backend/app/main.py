@@ -75,3 +75,9 @@ app.add_exception_handler(
 # ------------------------------
 
 app.include_router(api_router)
+
+
+# Root health check — AppSail probes this immediately on startup
+@app.get("/", include_in_schema=False)
+async def root():
+    return {"status": "ok", "app": "CrimeSphere AI"}
