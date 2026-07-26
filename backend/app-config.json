@@ -3,7 +3,22 @@
   "build_path": ".",
   "stack": "python_3_11",
   "memory": 512,
-  "env_variables": {},
+  "env_variables": {
+    "APP_NAME": "CrimeSphere AI",
+    "APP_VERSION": "1.0.0",
+    "ENVIRONMENT": "production",
+    "DEBUG": "False",
+    "LOG_LEVEL": "INFO",
+    "SECRET_KEY": "fee38f941ac6a0bdc28f51432a9a7c9ea6168899eb8670c957af25610a3d1b68",
+    "JWT_SECRET_KEY": "7aa3da2bfca4a6d256b43120d30e4fef982884068fd8c81030a239d6115643cc",
+    "JWT_ALGORITHM": "HS256",
+    "ACCESS_TOKEN_EXPIRE_MINUTES": "60",
+    "ZOHO_CLIENT_ID": "1000.Z4PRVQH6CSLSHDTEE4N92TYZ4BZJ2G",
+    "ZOHO_CLIENT_SECRET": "dfbfcdbdfceeb91dc9e4dfeb6394a8ce42c5797bef",
+    "ZOHO_CATALYST_PROJECT_ID": "51480000000023004",
+    "ZOHO_CATALYST_ORG_ID": "60077232301",
+    "ZOHO_QUICKML_KB_IDS": "74900000000003015,74900000000003012,74900000000002019,74900000000002022"
+  },
   "scripts": {
     "install": "pip install -r requirements.txt"
   }
