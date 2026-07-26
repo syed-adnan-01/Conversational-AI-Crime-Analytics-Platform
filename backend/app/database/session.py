@@ -15,9 +15,11 @@ from app.core.config import settings
 logger = logging.getLogger("crimesphere.database")
 
 db_url = settings.DATABASE_URL
+_using_sqlite_fallback = False
 if not db_url:
     logger.warning("DATABASE_URL is empty! Falling back to in-memory SQLite to prevent startup crash.")
     db_url = "sqlite:///:memory:"
+    _using_sqlite_fallback = True
 
 engine_kwargs = {}
 if not db_url.startswith("sqlite"):
@@ -74,10 +76,13 @@ def seed_reference_data():
         conn.commit()
 
 
-try:
-    seed_reference_data()
-except Exception as e:
-    logger.warning("Reference data seed note: %s", e)
+if not _using_sqlite_fallback:
+    try:
+        seed_reference_data()
+    except Exception as e:
+        logger.warning("Reference data seed note: %s", e)
+else:
+    logger.info("Skipping reference data seed — using SQLite fallback (no DATABASE_URL).")
 
 
 def get_db() -> Generator[Session, None, None]:
