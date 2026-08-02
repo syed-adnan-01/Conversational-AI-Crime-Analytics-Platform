@@ -38,10 +38,8 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",   # Next.js frontend
-        "http://localhost:5173",   # legacy Vite frontend
-    ],
+    allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"https://.*\.catalystserverless\.(com|in)|https://.*\.zohocatalyst\.(com|in)|http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

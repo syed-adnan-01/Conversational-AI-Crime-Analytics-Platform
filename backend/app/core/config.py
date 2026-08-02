@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = int(os.environ.get("X_ZOHO_CATALYST_LISTEN_PORT", "8000"))
     LOG_LEVEL: str = "INFO"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://*.catalystserverless.com,https://*.catalystserverless.in,https://*.zohocatalyst.com,https://*.zohocatalyst.in"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        if not self.CORS_ORIGINS:
+            return ["*"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     # ── Security (MUST be set via AppSail env vars in production) ────────────
     SECRET_KEY: str = "insecure-default-change-in-appsail"

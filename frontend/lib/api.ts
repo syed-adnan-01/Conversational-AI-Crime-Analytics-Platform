@@ -15,7 +15,7 @@ export class ApiError extends Error {
 
 /** Shared HTTP client for CrimeSphere backend requests. */
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "",
   timeout: 15_000,
 });
 

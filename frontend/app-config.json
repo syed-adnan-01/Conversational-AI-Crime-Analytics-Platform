@@ -1,0 +1,14 @@
+{
+  "command": "npm start",
+  "build_path": ".",
+  "stack": "node_18",
+  "memory": 512,
+  "env_variables": {
+    "NODE_ENV": "production",
+    "PORT": "3000"
+  },
+  "scripts": {
+    "install": "npm install",
+    "build": "npm run build"
+  }
+}

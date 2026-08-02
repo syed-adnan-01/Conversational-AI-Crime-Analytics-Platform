@@ -1,4 +1,7 @@
 {
+  "client": {
+    "source": "frontend/out"
+  },
   "functions": {
     "targets": [
       "placeholder"
@@ -10,6 +13,10 @@
     {
       "source": "backend",
       "name": "crimesphere-backend"
+    },
+    {
+      "source": "frontend",
+      "name": "crimesphere-frontend"
     }
   ]
 }

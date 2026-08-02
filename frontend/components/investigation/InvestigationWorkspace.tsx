@@ -395,7 +395,7 @@ export default function InvestigationWorkspace() {
         district: `PS ID: ${detail.police_station_id}`,
         leadOfficer: detail.police_person_id ? `Officer ${detail.police_person_id}` : "Unassigned",
         leadRank: "Investigator",
-        daysActive: detail.crime_registered_date ? Math.floor((Date.now() - new Date(detail.crime_registered_date).getTime()) / (1000 * 3600 * 24)) : 0,
+        daysActive: typeof detail.crime_registered_date === "string" || typeof detail.crime_registered_date === "number" ? Math.floor((Date.now() - new Date(detail.crime_registered_date).getTime()) / (1000 * 3600 * 24)) : 0,
         aiScore: 85, // Stub
         evidenceCount: evCount,
         suspectCount: accusedData.length,
