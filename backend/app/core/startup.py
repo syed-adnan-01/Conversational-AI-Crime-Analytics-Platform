@@ -1,3 +1,4 @@
+import logging
 from app.repository.case_repository import CaseRepository
 from app.repository.complainant_repository import ComplainantRepository
 from app.repository.user_repository import UserRepository
@@ -14,53 +15,42 @@ from app.repository.officer_repository import OfficerRepository
 from app.repository.chargesheet_repository import ChargesheetRepository
 from app.repository.court_proceeding_repository import CourtProceedingRepository
 
+logger = logging.getLogger("crimesphere.startup")
+
+repos = [
+    ("User", UserRepository),
+    ("Case", CaseRepository),
+    ("Complainant", ComplainantRepository),
+    ("Victim", VictimRepository),
+    ("Accused", AccusedRepository),
+    ("Act", ActRepository),
+    ("Section", SectionRepository),
+    ("CaseSection", CaseSectionRepository),
+    ("Evidence", EvidenceRepository),
+    ("Timeline", TimelineRepository),
+    ("Witness", WitnessRepository),
+    ("Arrest", ArrestRepository),
+    ("Officer", OfficerRepository),
+    ("Chargesheet", ChargesheetRepository),
+    ("CourtProceeding", CourtProceedingRepository),
+]
+
 
 def initialize_application() -> None:
     """
-    Initialize all application resources.
+    Initialize all application resources safely.
     """
+    try:
+        from app.database.session import _using_sqlite_fallback
+        if _using_sqlite_fallback:
+            logger.info("⚡ SQLite fallback active — skipping baseline repository database seeds.")
+            return
+    except Exception as exc:
+        logger.warning("Could not check sqlite fallback state: %s", exc)
 
-    UserRepository.initialize()
-    print("✅ User repository initialized.")
-
-    CaseRepository.initialize()
-    print("✅ Case repository initialized.")
-
-    ComplainantRepository.initialize()
-    print("✅ Complainant repository initialized.")
-
-    VictimRepository.initialize()
-    print("✅ Victim repository initialized.")
-
-    AccusedRepository.initialize()
-    print("✅ Accused repository initialized.")
-
-    ActRepository.initialize()
-    print("✅ Act repository initialized.")
-
-    SectionRepository.initialize()
-    print("✅ Section repository initialized.")
-
-    CaseSectionRepository.initialize()
-    print("✅ CaseSection repository initialized.")
-
-    EvidenceRepository.initialize()
-    print("✅ Evidence repository initialized.")
-
-    TimelineRepository.initialize()
-    print("✅ Timeline repository initialized.")
-
-    WitnessRepository.initialize()
-    print("✅ Witness repository initialized.")
-
-    ArrestRepository.initialize()
-    print("✅ Arrest repository initialized.")
-
-    OfficerRepository.initialize()
-    print("✅ Officer repository initialized.")
-
-    ChargesheetRepository.initialize()
-    print("✅ Chargesheet repository initialized.")
-
-    CourtProceedingRepository.initialize()
-    print("✅ CourtProceeding repository initialized.")
+    for name, repo in repos:
+        try:
+            repo.initialize()
+            logger.info("✅ %s repository initialized.", name)
+        except Exception as e:
+            logger.warning("⚠️ Could not initialize %s repository: %s", name, e)

@@ -12,11 +12,24 @@
   "appsail": [
     {
       "source": "backend",
-      "name": "crimesphere-backend"
+      "name": "crimesphere-backend",
+      "ignore": [
+        ".venv",
+        ".ven",
+        "__pycache__",
+        "*.pyc",
+        "logs",
+        ".pytest_cache"
+      ]
     },
     {
       "source": "frontend",
-      "name": "crimesphere-frontend"
+      "name": "crimesphere-frontend",
+      "ignore": [
+        "node_modules",
+        ".next",
+        "out"
+      ]
     }
   ]
 }

@@ -1,9 +1,10 @@
 {
-  "command": "bash start.sh",
+  "command": "python3 main.py",
   "build_path": ".",
   "stack": "python_3_11",
   "memory": 512,
   "env_variables": {
+    "PORT": "9000",
     "APP_NAME": "CrimeSphere AI",
     "APP_VERSION": "1.0.0",
     "ENVIRONMENT": "production",
@@ -19,7 +20,5 @@
     "ZOHO_CATALYST_ORG_ID": "60077232301",
     "ZOHO_QUICKML_KB_IDS": "74900000000003015,74900000000003012,74900000000002019,74900000000002022"
   },
-  "scripts": {
-    "install": "pip install -r requirements.txt"
-  }
+  "scripts": {}
 }

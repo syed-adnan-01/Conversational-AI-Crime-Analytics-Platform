@@ -1,31 +1,20 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -e
 
-PORT="${X_ZOHO_CATALYST_LISTEN_PORT:-9000}"
+# Detect Python binary
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    echo "Error: Python interpreter not found in PATH" >&2
+    exit 1
+fi
 
-echo "=== CrimeSphere AppSail Start ==="
-echo "PORT=$PORT"
-echo "PYTHON=$(python3 --version 2>&1)"
-echo "PWD=$(pwd)"
-echo "================================="
+PORT="${X_ZOHO_CATALYST_LISTEN_PORT:-${PORT:-9000}}"
 
-# Try importing the full app first
-python3 -c "
-import sys
-import traceback
-try:
-    from app.main import app
-    print('APP IMPORT: OK')
-except Exception as e:
-    print('APP IMPORT FAILED:', str(e))
-    traceback.print_exc()
-    sys.exit(1)
-"
+echo "=================================================="
+echo "Starting CrimeSphere AI Backend on port $PORT using $PYTHON_BIN"
+echo "=================================================="
 
-echo "Starting uvicorn on port $PORT..."
-exec uvicorn app.main:app \
-  --host 0.0.0.0 \
-  --port "$PORT" \
-  --workers 1 \
-  --log-level info \
-  --timeout-keep-alive 75
+exec "$PYTHON_BIN" -m uvicorn app.main:app --host 0.0.0.0 --port "$PORT"

@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+backend/.venv/
+backend/.ven/
+backend/__pycache__/
+*.pyc
+*.pyo
+logs/
+.pytest_cache/

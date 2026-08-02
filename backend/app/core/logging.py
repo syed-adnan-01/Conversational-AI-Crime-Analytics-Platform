@@ -1,16 +1,13 @@
 import logging
-from logging.handlers import RotatingFileHandler
+import sys
 from pathlib import Path
-
-LOG_DIR = Path("logs")
-LOG_DIR.mkdir(exist_ok=True)
+from logging.handlers import RotatingFileHandler
 
 
 def create_logger(name: str, filename: str) -> logging.Logger:
     """
-    Creates and returns a configured logger.
+    Creates and returns a configured logger safely for cloud containers.
     """
-
     logger = logging.getLogger(name)
 
     if logger.handlers:
@@ -22,20 +19,23 @@ def create_logger(name: str, filename: str) -> logging.Logger:
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     )
 
-    file_handler = RotatingFileHandler(
-        LOG_DIR / filename,
-        maxBytes=5 * 1024 * 1024,
-        backupCount=5
-    )
-
-    file_handler.setFormatter(formatter)
-
-    console_handler = logging.StreamHandler()
-
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+
+    try:
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_dir / filename,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except Exception:
+        # Cloud containers (e.g. AppSail) may have restricted or read-only filesystems
+        pass
 
     return logger
 
