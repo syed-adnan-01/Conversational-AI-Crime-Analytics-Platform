@@ -91,6 +91,17 @@ api.interceptors.response.use(
   },
 );
 
+export function setApiBaseUrl(url: string): void {
+  if (typeof window !== "undefined") {
+    if (!url.trim()) {
+      window.localStorage.removeItem(API_URL_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(API_URL_STORAGE_KEY, url.trim().replace(/\/$/, ""));
+    }
+  }
+}
+
 export { TOKEN_STORAGE_KEY, API_URL_STORAGE_KEY };
 export default api;
+
 

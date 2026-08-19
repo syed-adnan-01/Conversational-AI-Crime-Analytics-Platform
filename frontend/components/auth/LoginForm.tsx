@@ -23,6 +23,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { authErrorMessage, useAuth } from "@/components/auth/AuthProvider";
+import { getApiBaseUrl, setApiBaseUrl } from "@/lib/api";
+
 
 // ─── Static data ─────────────────────────────────────────────────────────────
 
@@ -92,6 +94,20 @@ export default function LoginForm() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState("");
   const [currentTime, setCurrentTime] = useState("");
+  const [showApiSettings, setShowApiSettings] = useState(false);
+  const [customApiUrl, setCustomApiUrl] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setCustomApiUrl(getApiBaseUrl());
+    }
+  }, []);
+
+  const handleSaveApiUrl = () => {
+    setApiBaseUrl(customApiUrl);
+    setShowApiSettings(false);
+    setError("");
+  };
 
   // Live clock
   useEffect(() => {
@@ -379,19 +395,47 @@ export default function LoginForm() {
                 <p className="text-sm mt-1" style={{ color: "#526080" }}>
                   Enter your credentials to access the platform
                 </p>
-                {/* Demo hint */}
-                <div
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 mt-3 text-xs"
-                  style={{
-                    background: "rgba(0,112,243,0.08)",
-                    border: "1px solid rgba(0,112,243,0.2)",
-                    color: "#2b91ff",
-                  }}
-                >
-                  <CheckCircle2 className="w-3 h-3" />
-                  Demo: ID&nbsp;<strong>{DEMO_ID}</strong>&nbsp;/ Pass&nbsp;<strong>{DEMO_PASS}</strong>
+                {/* Demo hint & API URL config toggle */}
+                <div className="flex flex-col items-center gap-2 mt-3">
+                  <div
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+                    style={{
+                      background: "rgba(0,112,243,0.08)",
+                      border: "1px solid rgba(0,112,243,0.2)",
+                      color: "#2b91ff",
+                    }}
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    Demo: ID&nbsp;<strong>{DEMO_ID}</strong>&nbsp;/ Pass&nbsp;<strong>{DEMO_PASS}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowApiSettings(!showApiSettings)}
+                    className="text-[11px] underline transition-colors cursor-pointer"
+                    style={{ color: "#526080" }}
+                  >
+                    {showApiSettings ? "Hide API Config" : "⚙ Change Backend API URL"}
+                  </button>
                 </div>
+
+                {showApiSettings && (
+                  <div className="mt-3 p-3 rounded-lg text-left text-xs space-y-2" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                    <Label className="text-xs text-gray-300 font-medium">Zoho Catalyst AppSail URL:</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={customApiUrl}
+                        onChange={(e) => setCustomApiUrl(e.target.value)}
+                        placeholder="https://crimesphere-backend-...catalystappsail.in"
+                        className="h-8 text-xs text-white bg-black/40 border-white/10"
+                      />
+                      <Button size="sm" type="button" onClick={handleSaveApiUrl} className="h-8 text-xs bg-blue-600 hover:bg-blue-500">
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
+
 
               {/* ── Form ── */}
               <form onSubmit={handleSubmit} className="space-y-5">
