@@ -1,6 +1,8 @@
 import axios from "axios";
 
 const TOKEN_STORAGE_KEY = "crimesphere.access_token";
+const API_URL_STORAGE_KEY = "crimesphere.api_url";
+const DEFAULT_CATALYST_BACKEND = "https://crimesphere-backend-60077232301.development.catalystserverless.com";
 
 export class ApiError extends Error {
   constructor(
@@ -13,13 +15,47 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Dynamically resolves the API base URL based on runtime environment.
+ * If running on live hosting (Zoho Slate, Zoho Catalyst, etc.), avoids falling back to localhost.
+ */
+export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    // 1. Check for manual override in localStorage
+    const storedUrl = window.localStorage.getItem(API_URL_STORAGE_KEY);
+    if (storedUrl && storedUrl.trim()) {
+      return storedUrl.trim().replace(/\/$/, "");
+    }
+
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+    const envUrl = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+
+    // 2. If running live (not localhost), force live backend URL if env is localhost or relative
+    if (!isLocalhost) {
+      if (!envUrl || envUrl.includes("localhost") || envUrl.includes("127.0.0.1")) {
+        return DEFAULT_CATALYST_BACKEND;
+      }
+      return envUrl;
+    }
+
+    if (envUrl) return envUrl;
+  }
+
+  return (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "") || "http://localhost:8000";
+}
+
 /** Shared HTTP client for CrimeSphere backend requests. */
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "",
+  baseURL: getApiBaseUrl(),
   timeout: 15_000,
 });
 
 api.interceptors.request.use((config) => {
+  // Ensure baseURL is dynamically evaluated at request time
+  config.baseURL = getApiBaseUrl();
+
   if (typeof window !== "undefined") {
     const token = window.localStorage.getItem(TOKEN_STORAGE_KEY);
     if (token) {
@@ -55,5 +91,6 @@ api.interceptors.response.use(
   },
 );
 
-export { TOKEN_STORAGE_KEY };
+export { TOKEN_STORAGE_KEY, API_URL_STORAGE_KEY };
 export default api;
+

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = int(os.environ.get("X_ZOHO_CATALYST_LISTEN_PORT") or os.environ.get("PORT") or "8000")
     LOG_LEVEL: str = "INFO"
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://*.catalystserverless.com,https://*.catalystserverless.in,https://*.zohocatalyst.com,https://*.zohocatalyst.in,https://*.catalystappsail.in,https://*.catalystappsail.com"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://*.catalystserverless.com,https://*.catalystserverless.in,https://*.zohocatalyst.com,https://*.zohocatalyst.in,https://*.catalystappsail.in,https://*.catalystappsail.com,https://*.zohoslate.com,https://*.zohoslate.in,https://*.zohosites.com,https://*.zohosites.in,https://*.zoho.com,https://*.zoho.in"
 
     @property
     def cors_origins_list(self) -> list[str]:
